@@ -1,12 +1,13 @@
 const {
   app, BrowserWindow, globalShortcut, ipcMain, screen, Tray, Menu, nativeImage,
-  protocol, net, systemPreferences, session, shell, desktopCapturer,
+  protocol, net, systemPreferences, session, shell, desktopCapturer, dialog,
 } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const config = require('./config');
 const { streamAnswer, describeError } = require('./claude');
 const { captureScreen } = require('./capture');
+const { extractText } = require('./documents');
 
 const DIST = path.join(__dirname, '..', '..', 'dist');
 const ASSETS = path.join(__dirname, '..', '..', 'assets');
@@ -30,6 +31,7 @@ let win = null;
 let tray = null;
 const inflight = new Map(); // request id -> AbortController
 
+// ------------------------------------------------------------------ window
 function createWindow() {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const { x, y, width } = display.workArea;
@@ -86,13 +88,14 @@ function createWindow() {
         fontLoaded: document.fonts.check('13px "Geist Variable"'),
         hasLogo: !!document.querySelector('#logo svg'),
         settingsOpen: !document.querySelector('#settings').classList.contains('hidden'),
+        shortcutLabel: document.querySelector('[data-shortcut="capture"]').textContent,
         workerOk: typeof Worker === 'function',
         isolated: self.crossOriginIsolated,
         webgpu: 'gpu' in navigator,
         height: document.querySelector('#app').getBoundingClientRect().height,
       })`);
       console.log('SMOKE', JSON.stringify(probe));
-      app.exit(probe.hasLogo && probe.fontLoaded ? 0 : 1);
+      app.exit(probe.hasLogo && probe.fontLoaded && probe.shortcutLabel ? 0 : 1);
     }, 1500));
   }
   win.loadURL('app://halo/index.html');
@@ -112,15 +115,41 @@ function sendHotkey(action) {
   win.webContents.send('hotkey', { action });
 }
 
+// --------------------------------------------------------------- shortcuts
+const ACTIONS = {
+  toggle: () => toggleWindow(),
+  capture: () => sendHotkey('capture'),
+  listen: () => sendHotkey('listen'),
+  collapse: () => sendHotkey('collapse'),
+};
+
+/** Registers the configured shortcuts. Returns { action: accelerator } for any that failed. */
 function registerShortcuts() {
-  const map = {
-    'CommandOrControl+Shift+Space': () => toggleWindow(),
-    'CommandOrControl+Shift+Return': () => sendHotkey('capture'),
-    'CommandOrControl+Shift+L': () => sendHotkey('listen'),
-  };
-  for (const [accel, fn] of Object.entries(map)) {
-    if (!globalShortcut.register(accel, fn)) console.warn('Could not register shortcut', accel);
+  globalShortcut.unregisterAll();
+  const failed = {};
+  const shortcuts = config.load().shortcuts || {};
+  for (const [action, fn] of Object.entries(ACTIONS)) {
+    const accel = shortcuts[action];
+    if (!accel) continue;
+    let ok = false;
+    try { ok = globalShortcut.register(accel, fn); } catch { ok = false; }
+    if (!ok) { failed[action] = accel; console.warn('Could not register shortcut', action, accel); }
   }
+  return failed;
+}
+
+function buildTrayMenu() {
+  const s = config.load().shortcuts || {};
+  tray?.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Show / Hide', accelerator: s.toggle, click: toggleWindow },
+    { label: 'Capture screen & ask', accelerator: s.capture, click: ACTIONS.capture },
+    { label: 'Toggle interview listening', accelerator: s.listen, click: ACTIONS.listen },
+    { label: 'Collapse / expand panel', accelerator: s.collapse, click: ACTIONS.collapse },
+    { type: 'separator' },
+    { label: 'Settings…', click: () => sendHotkey('settings') },
+    { type: 'separator' },
+    { label: 'Quit Halo', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
+  ]));
 }
 
 function createTray() {
@@ -128,18 +157,11 @@ function createTray() {
   icon.setTemplateImage(true);
   tray = new Tray(icon);
   tray.setToolTip('Halo');
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Show / Hide', accelerator: 'CmdOrCtrl+Shift+Space', click: toggleWindow },
-    { label: 'Capture screen & ask', accelerator: 'CmdOrCtrl+Shift+Return', click: () => sendHotkey('capture') },
-    { label: 'Toggle interview listening', accelerator: 'CmdOrCtrl+Shift+L', click: () => sendHotkey('listen') },
-    { type: 'separator' },
-    { label: 'Settings…', click: () => sendHotkey('settings') },
-    { type: 'separator' },
-    { label: 'Quit Halo', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
-  ]));
+  buildTrayMenu();
   tray.on('click', toggleWindow);
 }
 
+// ---------------------------------------------------------------- protocol
 function registerAppProtocol() {
   protocol.handle('app', async (request) => {
     const { pathname } = new URL(request.url);
@@ -175,24 +197,44 @@ function setupSession() {
   });
 }
 
+// --------------------------------------------------------------------- ipc
 function registerIpc() {
-  ipcMain.handle('settings:get', () => config.getPublic());
-  ipcMain.handle('settings:set', (_e, patch) => config.update(patch || {}));
+  ipcMain.handle('settings:get', () => ({ ...config.getPublic(), shortcutErrors: {} }));
+  ipcMain.handle('settings:set', (_e, patch) => {
+    const result = config.update(patch || {});
+    let shortcutErrors = {};
+    if (patch && patch.shortcuts && !SMOKE) { shortcutErrors = registerShortcuts(); buildTrayMenu(); }
+    return { ...result, shortcutErrors };
+  });
 
   ipcMain.handle('screen:capture', async () => captureScreen());
+
+  ipcMain.handle('document:import', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      title: 'Choose a document',
+      properties: ['openFile'],
+      filters: [
+        { name: 'Documents', extensions: ['pdf', 'docx', 'txt', 'md', 'markdown', 'html'] },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (canceled || !filePaths[0]) return null;
+    return extractText(filePaths[0]);
+  });
 
   ipcMain.handle('claude:ask', async (event, req) => {
     const { id, mode, messages } = req;
     const apiKey = config.getApiKey();
     const send = (payload) => { if (!event.sender.isDestroyed()) event.sender.send('claude:event', { id, ...payload }); };
-    if (!apiKey) { send({ type: 'error', message: 'Add your Anthropic API key in Settings first.' }); return; }
+    if (!apiKey) { send({ type: 'error', message: 'Add your Anthropic API key in Settings → Account first.' }); return; }
     const settings = config.load();
     const controller = new AbortController();
     inflight.set(id, controller);
     try {
       const result = await streamAnswer({
         apiKey, mode, messages,
-        model: settings.model, effort: settings.effort, context: settings.context,
+        model: settings.model, effort: settings.effort,
+        profile: { resume: settings.resume, job: settings.job, context: settings.context },
         signal: controller.signal,
         onDelta: (text) => send({ type: 'delta', text }),
       });

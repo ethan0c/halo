@@ -12,14 +12,14 @@
     <header class="bar" id="bar">
       <div class="logo" id="logo" title="Halo"></div>
 
-      <button id="btn-capture" class="chip" title="Capture the screen and ask Claude (⌘⇧↩)">
+      <button id="btn-capture" class="chip" title="Capture the screen and ask Claude">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.2"/></svg>
-        <span>Capture</span><kbd>⌘⇧↩</kbd>
+        <span>Capture</span><kbd data-shortcut="capture"></kbd>
       </button>
 
-      <button id="btn-listen" class="chip" title="Interview mode: listen, transcribe, suggest answers (⌘⇧L)">
+      <button id="btn-listen" class="chip" title="Interview mode: listen, transcribe, suggest answers">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
-        <span>Listen</span><kbd>⌘⇧L</kbd>
+        <span>Listen</span><kbd data-shortcut="listen"></kbd>
       </button>
 
       <form id="ask-form" class="ask" autocomplete="off">
@@ -31,10 +31,13 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg>
       </label>
 
+      <button id="btn-collapse" class="icon hidden" title="Collapse / expand the panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
       <button id="btn-settings" class="icon" title="Settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
       </button>
-      <button id="btn-hide" class="icon" title="Hide (Esc). Bring back with ⌘⇧Space">
+      <button id="btn-hide" class="icon" title="Hide (Esc)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg>
       </button>
     </header>
@@ -54,73 +57,115 @@
 
     <section id="settings" class="panel settings hidden">
       <div class="settings-head">
-        <div class="settings-title"><span class="logo small" id="logo-2"></span><strong>Halo</strong><span class="muted">settings</span></div>
+        <div class="settings-title"><span class="logo small" id="logo-2"></span><strong>Halo</strong></div>
+        <nav class="tabs" id="tabs">
+          <button data-tab="general" class="tab active">General</button>
+          <button data-tab="profile" class="tab">Profile</button>
+          <button data-tab="audio" class="tab">Audio</button>
+          <button data-tab="shortcuts" class="tab">Shortcuts</button>
+          <button data-tab="account" class="tab">Account</button>
+        </nav>
         <button id="btn-close-settings" class="icon" title="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
       </div>
       <p id="settings-hint" class="hint hidden"></p>
 
-      <div class="field">
-        <label for="api-key">Anthropic API key</label>
+      <div class="tab-page" data-page="general">
+        <div class="grid">
+          <div class="field">
+            <label for="model">Model</label>
+            <select id="model">
+              <option value="claude-opus-5-5">Claude Opus 5.5 (default)</option>
+              <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (faster)</option>
+              <option value="claude-haiku-4-5">Claude Haiku 4.5 (fastest)</option>
+              <option value="claude-fable-5-1">Claude Fable 5.1 (most capable)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="effort">Depth for screen questions</label>
+            <select id="effort">
+              <option value="low">Fast</option>
+              <option value="medium">Balanced</option>
+              <option value="high">Deep</option>
+            </select>
+          </div>
+        </div>
+        <div class="row checks">
+          <label class="check"><input type="checkbox" id="auto-answer" /> Auto-suggest answers while listening</label>
+          <label class="check"><input type="checkbox" id="attach-screen-setting" /> Attach a screenshot to typed questions</label>
+        </div>
+      </div>
+
+      <div class="tab-page hidden" data-page="profile">
+        <div class="field">
+          <label>Resume <span class="muted">(PDF, DOCX, TXT or Markdown; parsed on this Mac)</span></label>
+          <div class="row file-row">
+            <button id="btn-upload-resume" class="mini primary">Upload resume…</button>
+            <span id="resume-status" class="muted">No resume yet.</span>
+            <span class="spacer"></span>
+            <button id="btn-remove-resume" class="mini hidden">Remove</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="job">Job description <span class="muted">(paste it, or upload a file)</span></label>
+          <textarea id="job" rows="4" placeholder="Paste the posting or the role summary…"></textarea>
+          <div class="row"><button id="btn-upload-job" class="mini">Upload file…</button><small id="job-status" class="muted"></small></div>
+        </div>
+        <div class="field">
+          <label for="context">Notes <span class="muted">(stories to lean on, things to avoid, anything else)</span></label>
+          <textarea id="context" rows="3" placeholder="e.g. Lead with the Next.js migration story; I'm switching from fintech to healthcare…"></textarea>
+        </div>
+      </div>
+
+      <div class="tab-page hidden" data-page="audio">
+        <div class="grid">
+          <div class="field">
+            <label for="mic">Microphone / input</label>
+            <select id="mic"><option value="">System default</option></select>
+            <small class="muted">To hear the interviewer, use speakers or pick a loopback device (e.g. BlackHole).</small>
+          </div>
+          <div class="field">
+            <label for="whisper-model">Speech model (runs locally)</label>
+            <select id="whisper-model">
+              <option value="onnx-community/whisper-tiny">Whisper tiny (fastest)</option>
+              <option value="onnx-community/whisper-base">Whisper base (balanced)</option>
+              <option value="onnx-community/whisper-small">Whisper small (most accurate)</option>
+            </select>
+          </div>
+        </div>
+        <div class="row checks">
+          <label class="check" id="system-audio-label"><input type="checkbox" id="system-audio" /> Also capture system audio</label>
+        </div>
+      </div>
+
+      <div class="tab-page hidden" data-page="shortcuts">
+        <div class="shortcut-list" id="shortcut-list">
+          <div class="shortcut-row"><span>Show / hide Halo</span><input class="recorder" data-action="toggle" readonly /></div>
+          <div class="shortcut-row"><span>Capture screen &amp; ask</span><input class="recorder" data-action="capture" readonly /></div>
+          <div class="shortcut-row"><span>Start / stop listening</span><input class="recorder" data-action="listen" readonly /></div>
+          <div class="shortcut-row"><span>Collapse / expand panel</span><input class="recorder" data-action="collapse" readonly /></div>
+        </div>
         <div class="row">
-          <input id="api-key" type="password" placeholder="sk-ant-…" spellcheck="false" />
-          <button id="btn-save-key" class="mini primary">Save</button>
+          <small class="muted">Click a field and press the keys you want. <kbd>Esc</kbd> always hides the overlay.</small>
+          <span class="spacer"></span>
+          <button id="btn-reset-shortcuts" class="mini">Reset to defaults</button>
         </div>
-        <small id="key-status" class="muted"></small>
+        <small id="shortcut-error" class="error-text hidden"></small>
       </div>
 
-      <div class="grid">
+      <div class="tab-page hidden" data-page="account">
         <div class="field">
-          <label for="model">Model</label>
-          <select id="model">
-            <option value="claude-opus-5-5">Claude Opus 5.5 (default)</option>
-            <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (faster)</option>
-            <option value="claude-haiku-4-5">Claude Haiku 4.5 (fastest)</option>
-            <option value="claude-fable-5-1">Claude Fable 5.1 (most capable)</option>
-          </select>
+          <label for="api-key">Anthropic API key</label>
+          <div class="row">
+            <input id="api-key" type="password" placeholder="sk-ant-…" spellcheck="false" />
+            <button id="btn-save-key" class="mini primary">Save</button>
+          </div>
+          <small id="key-status" class="muted"></small>
+          <small class="muted">Get one at <a href="https://console.anthropic.com/settings/keys" id="console-link">console.anthropic.com</a>. Stored encrypted on this Mac; only ever sent to api.anthropic.com.</small>
         </div>
-        <div class="field">
-          <label for="effort">Depth for screen questions</label>
-          <select id="effort">
-            <option value="low">Fast</option>
-            <option value="medium">Balanced</option>
-            <option value="high">Deep</option>
-          </select>
+        <div class="row">
+          <span class="spacer"></span>
+          <button id="btn-quit" class="mini danger">Quit Halo</button>
         </div>
-      </div>
-
-      <div class="field">
-        <label for="context">About you <span class="muted">(resume, role, the job you're interviewing for)</span></label>
-        <textarea id="context" rows="4" placeholder="e.g. Senior frontend engineer, 6 yrs React/TypeScript, led migration to Next.js at Acme; interviewing for Staff role at…"></textarea>
-      </div>
-
-      <div class="grid">
-        <div class="field">
-          <label for="mic">Microphone / input</label>
-          <select id="mic"><option value="">System default</option></select>
-          <small class="muted">To hear the interviewer, use speakers or pick a loopback device (e.g. BlackHole).</small>
-        </div>
-        <div class="field">
-          <label for="whisper-model">Speech model (runs locally)</label>
-          <select id="whisper-model">
-            <option value="onnx-community/whisper-tiny">Whisper tiny (fastest)</option>
-            <option value="onnx-community/whisper-base">Whisper base (balanced)</option>
-            <option value="onnx-community/whisper-small">Whisper small (most accurate)</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="row checks">
-        <label class="check"><input type="checkbox" id="auto-answer" /> Auto-suggest answers while listening</label>
-        <label class="check" id="system-audio-label"><input type="checkbox" id="system-audio" /> Also capture system audio</label>
-      </div>
-
-      <div class="row shortcuts">
-        <span><kbd>⌘⇧Space</kbd> show / hide</span>
-        <span><kbd>⌘⇧↩</kbd> capture</span>
-        <span><kbd>⌘⇧L</kbd> listen</span>
-        <span><kbd>Esc</kbd> hide</span>
-        <span class="spacer"></span>
-        <button id="btn-quit" class="mini danger">Quit Halo</button>
       </div>
     </section>
   </div>

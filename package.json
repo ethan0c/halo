@@ -17,7 +17,9 @@
     "@anthropic-ai/sdk": "latest",
     "@fontsource-variable/geist": "latest",
     "@huggingface/transformers": "latest",
-    "marked": "latest"
+    "mammoth": "^1.13.0",
+    "marked": "latest",
+    "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
     "electron": "latest",
@@ -27,11 +29,18 @@
   "build": {
     "appId": "app.halo.overlay",
     "productName": "Halo",
-    "files": ["src/**", "dist/**", "assets/**", "package.json"],
+    "files": [
+      "src/**",
+      "dist/**",
+      "assets/**",
+      "package.json"
+    ],
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "assets/icon.png",
-      "target": ["dir"],
+      "target": [
+        "dir"
+      ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Halo listens to your interview so it can transcribe and suggest answers.",
         "NSScreenCaptureUsageDescription": "Halo captures your screen so Claude can answer what is on it.",

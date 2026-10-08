@@ -23,10 +23,13 @@ You are whispering to a candidate during a live interview. You receive a rolling
 - If the latest speech is not a question (small talk, the candidate mid-answer), give 1 to 3 short talking points to continue with.
 - Use the candidate's background below when it is relevant; never invent experience they do not have.`;
 
-function buildSystem(mode, context) {
+function buildSystem(mode, profile = {}) {
   const base = mode === 'listen' ? INTERVIEW_SYSTEM : CAPTURE_SYSTEM;
-  const ctx = (context || '').trim();
-  return ctx ? `${base}\n\n<candidate_background>\n${ctx}\n</candidate_background>` : base;
+  const parts = [];
+  if (profile.resume?.text) parts.push(`<resume source="${profile.resume.name || 'resume'}">\n${profile.resume.text.trim()}\n</resume>`);
+  if ((profile.job || '').trim()) parts.push(`<job_description>\n${profile.job.trim()}\n</job_description>`);
+  if ((profile.context || '').trim()) parts.push(`<notes>\n${profile.context.trim()}\n</notes>`);
+  return parts.length ? `${base}\n\n<candidate_background>\n${parts.join('\n\n')}\n</candidate_background>` : base;
 }
 
 function describeError(err) {
@@ -45,13 +48,13 @@ function describeError(err) {
  * Streams one answer. `onDelta(text)` fires for each text chunk.
  * Returns { text, stopReason, stopDetails, usage }.
  */
-async function streamAnswer({ apiKey, model, effort, mode, context, messages, signal, onDelta }) {
+async function streamAnswer({ apiKey, model, effort, mode, profile, messages, signal, onDelta }) {
   const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 120_000 });
   const isHaiku = /haiku/i.test(model);
   const params = {
     model,
     max_tokens: 4096, // overlay answers are deliberately short
-    system: buildSystem(mode, context),
+    system: buildSystem(mode, profile),
     messages,
   };
   if (!isHaiku) {

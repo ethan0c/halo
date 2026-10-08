@@ -7,7 +7,8 @@ Halo is a two-process Electron app. The main process owns everything privileged 
 │ main.js      window, tray, shortcuts, app:// protocol, IPC routing     │
 │ capture.js   desktopCapturer → JPEG ≤1568px of the display under cursor│
 │ claude.js    @anthropic-ai/sdk streaming, system prompts, error mapping │
-│ config.js    halo.json in userData, API key via safeStorage            │
+│ config.js    halo.json in userData, API key via safeStorage, shortcuts │
+│ documents.js resume / job description text extraction (pdf, docx, txt) │
 └───────────────▲──────────────────────────────┬────────────────────────┘
                 │ ipcRenderer.invoke / send     │ webContents.send('claude:event')
 ┌───────────────┴──────────────────────────────▼───── renderer ─────────┐
@@ -44,12 +45,14 @@ The overlay is never in the screenshot: content protection excludes it from `des
 3. Worker results become transcript segments. Common Whisper hallucinations on near-silence ("Thank you.") are filtered.
 4. With auto-suggest on, 0.9 s after a new segment with at least four fresh words, the rolling transcript (last 3500 chars) goes to Claude with the interview system prompt and `effort: low`. New speech aborts an in-flight suggestion and re-asks.
 5. "Answer now" and typed questions in the bar use the same transcript as context.
+6. The system prompt carries the profile from Settings → Profile as `<resume>`, `<job_description>` and `<notes>` blocks inside `<candidate_background>`. Documents are parsed locally in `documents.js` (pdf-parse for PDF, mammoth for DOCX) and capped at 40k characters.
 
 ## Window behaviour
 
 - Frameless, transparent, `vibrancy: 'hud'`, always on top at the `screen-saver` level, visible on all Spaces and over full-screen apps, hidden from Mission Control, Dock hidden, single instance.
 - The renderer reports its content height through a `ResizeObserver`; main resizes the native window to match, so the pill is exactly as tall as what is on screen.
-- Global shortcuts are registered in main and forwarded as `hotkey` events.
+- Global shortcuts are stored in settings (`shortcuts.toggle/capture/listen/collapse`), registered in main with `globalShortcut`, and forwarded to the renderer as `hotkey` events. Changing one re-registers all four and reports failures back so the Shortcuts tab can flag a combination another app owns.
+- The panel has two independent states: `panelOpen` (there is content) and `collapsed` (the user folded it to the bar with `⌘⇧M`). User-initiated actions un-collapse; automatic interview suggestions respect the collapse and mark the chevron with a dot instead.
 - `HALO_VISIBLE=1` turns content protection off (for taking screenshots of the app). `HALO_SMOKE=1` runs a headless self-check and exits.
 
 ## Files
@@ -59,7 +62,8 @@ The overlay is never in the screenshot: content protection excludes it from `des
 | `src/main/main.js` | App lifecycle, window, tray, shortcuts, protocol, IPC |
 | `src/main/capture.js` | Screen capture and resizing |
 | `src/main/claude.js` | Claude streaming and prompts |
-| `src/main/config.js` | Settings persistence and key encryption |
+| `src/main/config.js` | Settings persistence, key encryption, default shortcuts |
+| `src/main/documents.js` | Resume / job description text extraction |
 | `src/preload.js` | The `window.halo` bridge |
 | `src/renderer/index.html` | Markup and CSP |
 | `src/renderer/styles.css` | Liquid-glass styling, Geist |

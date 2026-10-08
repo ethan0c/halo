@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('halo', {
   ask: (req) => ipcRenderer.invoke('claude:ask', req),
   abort: (id) => ipcRenderer.invoke('claude:abort', id),
   requestMic: () => ipcRenderer.invoke('mic:request'),
+  importDocument: () => ipcRenderer.invoke('document:import'),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   resize: (height) => ipcRenderer.send('window:resize', height),
   hide: () => ipcRenderer.send('window:hide'),

@@ -4,16 +4,25 @@ const { app, safeStorage } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
+const DEFAULT_SHORTCUTS = {
+  toggle: 'CommandOrControl+Shift+H',   // H for Halo: show / hide
+  capture: 'CommandOrControl+Shift+C',  // C for Capture
+  listen: 'CommandOrControl+Shift+L',   // L for Listen
+  collapse: 'CommandOrControl+Shift+M', // M for Minimize the panel to the bar
+};
 const DEFAULTS = {
   model: 'claude-opus-5-5',
   effort: 'medium',
-  context: '',
+  context: '',          // free-form notes about the user
+  resume: null,         // { name, text }
+  job: '',              // job description text
   micId: '',
   systemAudio: false,
   autoAnswer: true,
   whisperModel: 'onnx-community/whisper-base',
   language: 'english',
   attachScreen: true,
+  shortcuts: { ...DEFAULT_SHORTCUTS },
 };
 const PUBLIC_KEYS = Object.keys(DEFAULTS);
 
@@ -22,8 +31,10 @@ const file = () => path.join(app.getPath('userData'), 'halo.json');
 
 function load() {
   if (cache) return cache;
-  try { cache = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) }; }
-  catch { cache = { ...DEFAULTS }; }
+  try {
+    const stored = JSON.parse(fs.readFileSync(file(), 'utf8'));
+    cache = { ...DEFAULTS, ...stored, shortcuts: { ...DEFAULT_SHORTCUTS, ...(stored.shortcuts || {}) } };
+  } catch { cache = { ...DEFAULTS, shortcuts: { ...DEFAULT_SHORTCUTS } }; }
   return cache;
 }
 function persist() {
@@ -56,14 +67,18 @@ function getPublic() {
   out.hasKey = Boolean(key);
   out.keyHint = key ? '••••' + key.slice(-4) : '';
   out.keyFromEnv = Boolean(!c.apiKeyEnc && process.env.ANTHROPIC_API_KEY);
+  out.defaultShortcuts = { ...DEFAULT_SHORTCUTS };
   return out;
 }
 function update(patch) {
   const c = load();
   if (Object.prototype.hasOwnProperty.call(patch, 'apiKey')) setApiKey(patch.apiKey);
-  for (const k of PUBLIC_KEYS) if (Object.prototype.hasOwnProperty.call(patch, k)) c[k] = patch[k];
+  for (const k of PUBLIC_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(patch, k)) continue;
+    c[k] = k === 'shortcuts' ? { ...DEFAULT_SHORTCUTS, ...(patch.shortcuts || {}) } : patch[k];
+  }
   persist();
   return getPublic();
 }
 
-module.exports = { load, getApiKey, getPublic, update, DEFAULTS };
+module.exports = { load, getApiKey, getPublic, update, DEFAULTS, DEFAULT_SHORTCUTS };
