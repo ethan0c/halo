@@ -139,7 +139,7 @@ function createWindow() {
     frame: false,
     transparent: true,
     roundedCorners: true,
-    hasShadow: true,
+    hasShadow: false,   // macOS builds its shadow from the alpha mask and draws a jagged outline on transparent windows; the CSS shadow does the job
     resizable: false,
     movable: true,
     minimizable: false,
