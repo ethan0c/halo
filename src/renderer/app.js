@@ -12,7 +12,7 @@ const el = {
   capture: $('#btn-capture'), listen: $('#btn-listen'),
   askForm: $('#ask-form'), askInput: $('#ask-input'),
   collapse: $('#btn-collapse'), settingsBtn: $('#btn-settings'), hideBtn: $('#btn-hide'), preset: $('#preset'), keepFocus: $('#keep-focus'),
-  panel: $('#panel'), transcript: $('#transcript'), answer: $('#answer'), status: $('#status'),
+  panel: $('#panel'), transcript: $('#transcript'), answer: $('#answer'), newer: $('#btn-newer'), status: $('#status'),
   stop: $('#btn-stop'), answerNow: $('#btn-answer-now'), copy: $('#btn-copy'), clear: $('#btn-clear'),
   settings: $('#settings'), closeSettings: $('#btn-close-settings'), hint: $('#settings-hint'), tabs: $('#tabs'),
   model: $('#model'), effort: $('#effort'), autoAnswer: $('#auto-answer'), attachSetting: $('#attach-screen-setting'), noise: $('#noise-suppression'),
@@ -103,6 +103,19 @@ function accelFromEvent(e) {
   return [...mods, key].join('+');
 }
 
+// Streaming output follows itself only while the reader is at the bottom and
+// not reading: a pointer over the panel means eyes on it, so nothing moves.
+// Text that arrives unseen gets a "Newer" pill instead of a scroll jump.
+const reading = () => el.answer.matches(':hover'); // :hover rather than enter/leave events, which a hidden panel can swallow
+const atBottom = () => el.answer.scrollHeight - el.answer.scrollTop - el.answer.clientHeight < 24;
+/** Call with atBottom() measured before the DOM changed. */
+function followOutput(wasAtBottom) {
+  if (wasAtBottom && !reading()) el.answer.scrollTop = el.answer.scrollHeight;
+  show(el.newer, !atBottom());
+}
+el.answer.addEventListener('scroll', () => { if (atBottom()) show(el.newer, false); });
+el.newer.addEventListener('click', () => { el.answer.scrollTo({ top: el.answer.scrollHeight, behavior: 'smooth' }); show(el.newer, false); });
+
 let renderQueued = false;
 function renderAnswer(streaming = false) {
   if (renderQueued) return;
@@ -111,15 +124,46 @@ function renderAnswer(streaming = false) {
     renderQueued = false;
     const text = current?.text || '';
     const target = el.answer.querySelector('.turn-a.live') || el.answer;
+    const follow = atBottom();
     target.innerHTML = text ? marked.parse(text) : '<p class="empty">…</p>';
     if (streaming) target.lastElementChild?.classList.add('cursor');
-    el.answer.scrollTop = el.answer.scrollHeight;
+    followOutput(follow);
   });
 }
-function showError(message) { el.answer.innerHTML = `<p class="error">${escapeHtml(message)}</p>`; }
+function showError(message) { el.answer.innerHTML = `<p class="error">${escapeHtml(message)}</p>`; show(el.newer, false); }
 
-// The capture conversation renders as a thread: each question (tagged when it
-// carried a screenshot) above its answer, so a follow-up never wipes earlier turns.
+// Answers render as a thread: each question (tagged when it carried a screenshot)
+// above its answer, so a new answer never wipes the one being read. The answer
+// in progress is the `.turn-a.live` node; everything above it stays untouched.
+function startLive(label, questionHtml = '') {
+  const follow = atBottom();
+  el.answer.querySelectorAll('.turn-a.live').forEach((n) => n.remove());
+  el.answer.insertAdjacentHTML('beforeend', `${questionHtml}<div class="turn-a live"><div class="skeleton"><i></i><i></i><i></i><small>${label}</small></div></div>`);
+  followOutput(follow);
+}
+/** Finishes the live turn with `text`; with none, `fallback` HTML takes its place, or the turn vanishes. */
+function finishLive(text, fallback = '') {
+  const live = el.answer.querySelector('.turn-a.live');
+  if (!live) return;
+  const follow = atBottom();
+  live.classList.remove('live');
+  if (text) live.innerHTML = marked.parse(text);
+  else if (fallback) live.innerHTML = fallback;
+  else {
+    if (live.previousElementSibling?.matches('.turn-q')) live.previousElementSibling.remove();
+    live.remove();
+  }
+  followOutput(follow);
+}
+/** Keeps the thread to the last `n` answers (with their question rows). */
+function pruneThread(n) {
+  let answers = el.answer.querySelectorAll('.turn-a').length;
+  while (answers > n && el.answer.firstElementChild) {
+    const node = el.answer.firstElementChild;
+    if (node.classList.contains('turn-a')) answers--;
+    node.remove();
+  }
+}
 function turnHtml(m) {
   if (m.role === 'assistant') return `<div class="turn-a">${marked.parse(m.content)}</div>`;
   const blocks = Array.isArray(m.content) ? m.content : [{ type: 'text', text: m.content }];
@@ -128,9 +172,10 @@ function turnHtml(m) {
   const question = text === DEFAULT_CAPTURE_PROMPT || text === FOLLOWUP_CAPTURE_PROMPT ? '' : text;
   return `<div class="turn-q">${shot ? '<span class="shot-tag">Screen</span>' : ''}<span>${escapeHtml(question || 'What is on my screen?')}</span></div>`;
 }
-function renderThread(tail = '') {
-  el.answer.innerHTML = convo.map(turnHtml).join('') + tail;
-  el.answer.scrollTop = el.answer.scrollHeight;
+function renderThread() {
+  const follow = atBottom();
+  el.answer.innerHTML = convo.map(turnHtml).join('');
+  followOutput(follow);
 }
 /** Settles an unfinished capture: a partial answer is kept with its question, an unanswered question is dropped. */
 function settleCapture(req) {
@@ -272,7 +317,7 @@ halo.onClaude((ev) => {
   if (!current || ev.id !== current.id) return;
   if (ev.type === 'delta') {
     current.text += ev.text;
-    if (!current.started) { current.started = true; el.answer.classList.remove('stale'); }
+    current.started = true;
     renderAnswer(true);
     return;
   }
@@ -280,21 +325,20 @@ halo.onClaude((ev) => {
   current = null;
   el.app.classList.remove('thinking');
   el.capture.classList.remove('busy');
-  el.answer.classList.remove('stale');
   show(el.stop, false);
   if (finished.keep && !finished.started && ev.type !== 'done') {
-    // Nothing new ever arrived: leave the previous answer exactly as it was.
+    // Nothing new ever arrived: drop the placeholder and leave the previous answer exactly as it was.
+    finishLive('');
     if (ev.type === 'error') setStatus(ev.message || 'Could not get a new suggestion.');
     if (finished.mode === 'listen' && audio.pendingAfter) { audio.pendingAfter = false; scheduleAutoAnswer(); }
     return;
   }
   if (ev.type === 'done') {
     finished.text = ev.text || finished.text;
-    if (finished.turn) {
-      // Capture area or margins changed mid-answer: the screenshot may show newly excluded content, so don't keep it.
-      if (finished.rev === captureRevision) convo = trimOldScreenshots([...convo, finished.turn, { role: 'assistant', content: finished.text || 'No answer.' }]);
-      renderThread(finished.rev === captureRevision ? '' : `${turnHtml(finished.turn)}<div class="turn-a">${marked.parse(finished.text || 'No answer.')}</div>`);
-    } else el.answer.innerHTML = finished.text ? marked.parse(finished.text) : '<p class="empty">No answer.</p>';
+    // Capture area or margins changed mid-answer: the screenshot may show newly excluded content, so don't keep that turn.
+    if (finished.turn && finished.rev === captureRevision) convo = trimOldScreenshots([...convo, finished.turn, { role: 'assistant', content: finished.text || 'No answer.' }]);
+    finishLive(finished.text, '<p class="empty">No answer.</p>');
+    if (finished.mode === 'listen') pruneThread(3);
     const u = ev.usage;
     const cached = u?.cache_read_input_tokens || 0;
     const usage = u ? ` · ${u.input_tokens + cached + (u.cache_creation_input_tokens || 0) + u.output_tokens} tok${cached ? ` (${cached} cached)` : ''}` : '';
@@ -306,28 +350,29 @@ halo.onClaude((ev) => {
       if (audio.pendingAfter) { audio.pendingAfter = false; scheduleAutoAnswer(); }
     }
   } else if (ev.type === 'aborted') {
-    if (finished.turn) { settleCapture(finished); renderThread(finished.text ? '' : '<p class="empty">Cancelled.</p>'); }
-    else el.answer.innerHTML = finished.text ? marked.parse(finished.text) : '<p class="empty">Cancelled.</p>';
+    settleCapture(finished);
+    finishLive(finished.text && `${finished.text}\n\n*(stopped)*`, '<p class="empty">Cancelled.</p>');
   } else {
     // A failed capture leaves the conversation as it was; the question can simply be asked again.
-    if (finished.turn) renderThread(`<p class="error">${escapeHtml(ev.message || 'Something went wrong.')}</p>`);
-    else showError(ev.message || 'Something went wrong.');
+    finishLive('', `<p class="error">${escapeHtml(ev.message || 'Something went wrong.')}</p>`);
     setStatus('');
   }
 });
 
 /**
- * Streams one answer. With `keep`, the answer currently on screen stays visible
- * (dimmed) until the new one starts streaming, so the panel never blanks.
+ * Streams one answer. With `keep`, whatever is on screen stays put and the new
+ * answer streams in beneath it (as a `question` row plus a live turn), so the
+ * panel never blanks and never takes away what is being read.
  */
-async function ask(reqMode, messages, { force = true, keep = false, turn = null } = {}) {
+async function ask(reqMode, messages, { force = true, keep = false, turn = null, question = '' } = {}) {
   if (current) await halo.abort(current.id);
   const id = `r${++reqCounter}`;
-  current = { id, text: '', mode: reqMode, keep: keep && el.answer.textContent.trim().length > 0, started: false, turn, rev: captureRevision };
+  current = { id, text: '', mode: reqMode, keep: keep && el.answer.querySelector('.turn-a') !== null, started: false, turn, rev: captureRevision };
   openPanel({ force });
-  if (turn) renderThread(`${turnHtml(turn)}<div class="turn-a live"><div class="skeleton"><i></i><i></i><i></i><small>Reading your screen</small></div></div>`);
-  else if (current.keep) el.answer.classList.add('stale');
-  else el.answer.innerHTML = `<div class="skeleton"><i></i><i></i><i></i><small>${reqMode === 'listen' ? 'Drafting what to say' : 'Reading your screen'}</small></div>`;
+  const label = reqMode === 'listen' ? 'Drafting what to say' : 'Reading your screen';
+  if (turn) { renderThread(); startLive(label, turnHtml(turn)); }
+  else if (current.keep) startLive(label, question ? `<div class="turn-q"><span>${escapeHtml(question)}</span></div>` : '');
+  else { el.answer.innerHTML = ''; startLive(label); }
   el.app.classList.add('thinking');
   show(el.stop);
   setStatus(reqMode === 'listen' ? 'Suggesting what to say…' : 'Asking Claude…');
@@ -388,7 +433,6 @@ async function runCapture(question = '', { screen = false } = {}) {
     await halo.abort(prev.id);
     el.app.classList.remove('thinking');
     show(el.stop, false);
-    renderThread();
   }
   mode = 'capture';
   openPanel({ force: true });
@@ -846,7 +890,10 @@ el.preset.addEventListener('click', async (e) => {
 });
 // Typing is the one thing that needs keyboard focus; hand it back when done.
 el.askInput.addEventListener('mousedown', () => { if (settings.keepFocus !== false) halo.focusInput(); });
-el.askInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); el.askInput.blur(); halo.releaseFocus(); } });
+el.askInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); el.askInput.blur(); } });
+// Clicking anywhere else (the answer, a button, another app) must hand focus back
+// too, or the window keeps the keyboard and Esc hides it mid-read.
+el.askInput.addEventListener('blur', () => { if (settings.keepFocus !== false) halo.releaseFocus(); });
 // Changing inputs while listening re-opens them so the change is immediate.
 for (const node of [el.mic, el.mic2]) node.addEventListener('change', () => { if (mode === 'listen') onInputLost('input'); });
 el.mic2.addEventListener('change', () => { if (el.mic2.value && el.mic2.value === el.mic.value) { el.mic2.value = ''; save({ mic2Id: '' }); } });
@@ -960,11 +1007,10 @@ el.askForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const q = el.askInput.value.trim();
   el.askInput.value = '';
-  el.askInput.blur();
-  if (settings.keepFocus !== false) halo.releaseFocus();
+  el.askInput.blur(); // hands focus back (see the blur listener)
   if (mode === 'listen' && q) {
     // In interview mode a typed question is answered with the transcript as context.
-    ask('listen', interviewMessages(`The candidate asks you directly: ${q}`), { keep: true });
+    ask('listen', interviewMessages(`The candidate asks you directly: ${q}`), { keep: true, question: q });
   } else runCapture(q);
 });
 el.listen.addEventListener('click', toggleListening);
@@ -987,6 +1033,7 @@ el.clear.addEventListener('click', async () => {
   convo = [];
   audio.segments = []; audio.answeredIndex = 0; audio.suggestions = []; audio.pendingAfter = false; clearTimeout(audio.pendingAnswer);
   renderTranscript();
+  show(el.newer, false);
   if (mode === 'listen') el.answer.innerHTML = '<p class="empty">Transcript cleared. Still listening.</p>';
   else { el.answer.innerHTML = ''; mode = 'idle'; closePanel(); }
   setStatus('');

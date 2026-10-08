@@ -122,7 +122,9 @@ function grabFocusForTyping() {
 }
 function releaseFocus() {
   if (!win || !keepFocusEnabled()) return;
+  const hadFocus = win.isFocused();
   win.setFocusable(false);
+  if (!hadFocus) return; // focus already went elsewhere (another app was clicked): nothing to hand back, and no blink
   if (process.platform === 'darwin') {
     // Deactivating the app returns focus to whatever was active before, then
     // the window comes back without taking focus with it.

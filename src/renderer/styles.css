@@ -235,7 +235,8 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
   text-shadow: var(--text-shadow);
   transition: opacity 0.3s;
 }
-.answer.stale { opacity: 0.5; }
+/* "Newer" pill: text arrived below while the reader was holding the panel still. */
+.newer { position: absolute; right: 14px; bottom: 46px; z-index: 2; box-shadow: var(--shadow); }
 .answer::-webkit-scrollbar { width: 6px; }
 .answer::-webkit-scrollbar-thumb { background: var(--fill-3); border-radius: 3px; }
 .answer > :first-child { margin-top: 0; }
