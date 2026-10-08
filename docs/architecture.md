@@ -33,9 +33,10 @@ Halo is a two-process Electron app. The main process owns everything privileged 
 
 ## Capture flow
 
-1. `runCapture(question)` in `app.js` asks main for a screenshot. `capture.js` finds the display under the cursor, captures it at native resolution, downsizes to a 1568 px long edge (Claude's effective maximum) and returns base64 JPEG.
-2. The screenshot and the question become one user turn in `convo`. Older turns keep at most two images (`trimOldScreenshots`), so follow-ups stay cheap.
-3. Main streams the answer with `client.beta.messages.stream`, `output_config.effort` from settings, and `fallbacks: 'default'` so a safety-classifier refusal is retried on another model instead of coming back empty.
+1. `runCapture(question)` in `app.js` asks main for a screenshot. `capture.js` uses the saved display-local selection (or finds the display under the cursor when none is saved), captures it at native resolution, crops the saved rectangle or configured logical-pixel margins (top defaults to 120) before encoding, downsizes to a 1568 px long edge (Claude's effective maximum) and returns base64 JPEG.
+2. Optional preview shows only the cropped JPEG locally and waits for Send; Cancel uploads nothing. Selection uses a temporary transparent, content-protected window with a restricted preload and saves display-local logical coordinates. Missing displays or changed display sizes stop capture until reselection.
+3. The screenshot and the question become one user turn in `convo`. Older turns keep at most two images (`trimOldScreenshots`), so follow-ups stay cheap.
+4. Main streams the answer with `client.beta.messages.stream`, `output_config.effort` from settings, and `fallbacks: 'default'` so a safety-classifier refusal is retried on another model instead of coming back empty.
 
 The overlay is never in the screenshot: content protection excludes it from `desktopCapturer` just as it does from Zoom.
 

@@ -7,6 +7,7 @@ const { pathToFileURL } = require('node:url');
 const config = require('./config');
 const { streamAnswer, describeError } = require('./claude');
 const { captureScreen } = require('./capture');
+const { selectCaptureArea } = require('./selection');
 const { extractText } = require('./documents');
 const { luminanceOfBitmap, nextTheme } = require('./backdrop');
 
@@ -308,6 +309,7 @@ function sendHotkey(action) {
 // --------------------------------------------------------------- shortcuts
 const ACTIONS = {
   toggle: () => toggleWindow(),
+  selectArea: () => sendHotkey('selectArea'),
   capture: () => sendHotkey('capture'),
   listen: () => sendHotkey('listen'),
   collapse: () => sendHotkey('collapse'),
@@ -333,6 +335,7 @@ function buildTrayMenu() {
   const s = config.load().shortcuts || {};
   tray?.setContextMenu(Menu.buildFromTemplate([
     { label: 'Show / Hide', accelerator: s.toggle, click: toggleWindow },
+    { label: 'Select capture area', accelerator: s.selectArea, click: ACTIONS.selectArea },
     { label: 'Capture screen & ask', accelerator: s.capture, click: ACTIONS.capture },
     { label: 'Toggle interview listening', accelerator: s.listen, click: ACTIONS.listen },
     { label: 'Collapse / expand panel', accelerator: s.collapse, click: ACTIONS.collapse },
@@ -404,7 +407,15 @@ function registerIpc() {
     return { ...result, shortcutErrors };
   });
 
-  ipcMain.handle('screen:capture', async () => captureScreen());
+  ipcMain.handle('screen:select-area', async () => {
+    const area = await selectCaptureArea();
+    if (area) config.update({ captureArea: area });
+    return config.getPublic();
+  });
+  ipcMain.handle('screen:capture', async () => {
+    const settings = config.load();
+    return captureScreen({ top: settings.captureTop, bottom: settings.captureBottom, left: settings.captureLeft, right: settings.captureRight }, settings.captureArea);
+  });
 
   ipcMain.handle('document:import', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog(win, {

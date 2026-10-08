@@ -43,6 +43,10 @@
 
     <section id="panel" class="panel hidden">
       <div id="transcript" class="transcript hidden"></div>
+      <div id="capture-preview" class="capture-preview hidden">
+        <img id="capture-preview-image" alt="Screenshot that will be sent to the model" />
+        <div class="row"><button id="send-capture" class="mini">Send screenshot</button><button id="cancel-capture" class="mini">Cancel</button></div>
+      </div>
       <div id="answer" class="answer"></div>
       <footer class="panel-foot">
         <span class="vu mini-vu hidden" id="vu-wrap"><i id="vu"></i></span>
@@ -98,6 +102,20 @@
               <option value="light">Always light glass</option>
             </select>
             <small class="muted">Auto samples the screen under the pill every 2 s (needs Screen Recording).</small>
+          </div>
+        </div>
+        <div class="field">
+          <label>Capture area</label>
+          <div class="row"><button id="select-capture-area" class="mini">Select / reselect area</button><button id="clear-capture-area" class="mini">Use margin crop</button></div>
+          <small id="capture-area-status" class="muted"></small>
+          <label class="check"><input id="preview-capture" type="checkbox" /> Preview screenshot before sending</label>
+          <label>Screenshot crop (used when no area is selected)</label>
+          <small class="muted">Exclude screen edges before sending. Margins are in screen pixels. Top defaults to 120 to hide browser tabs and the address bar; adjust for your layout. Set all to 0 for the full display.</small>
+          <div class="capture-margins">
+            <label class="field" for="capture-top">Top<input id="capture-top" type="number" min="0" step="1" /></label>
+            <label class="field" for="capture-bottom">Bottom<input id="capture-bottom" type="number" min="0" step="1" /></label>
+            <label class="field" for="capture-left">Left<input id="capture-left" type="number" min="0" step="1" /></label>
+            <label class="field" for="capture-right">Right<input id="capture-right" type="number" min="0" step="1" /></label>
           </div>
         </div>
         <div class="row checks">
@@ -166,6 +184,7 @@
       <div class="tab-page hidden" data-page="shortcuts">
         <div class="shortcut-list">
           <div class="shortcut-row"><span>Show / hide Halo</span><input class="recorder" data-action="toggle" readonly /></div>
+          <div class="shortcut-row"><span>Select capture area</span><input class="recorder" data-action="selectArea" readonly /></div>
           <div class="shortcut-row"><span>Capture screen &amp; ask</span><input class="recorder" data-action="capture" readonly /></div>
           <div class="shortcut-row"><span>Start / stop listening</span><input class="recorder" data-action="listen" readonly /></div>
           <div class="shortcut-row"><span>Collapse / expand panel</span><input class="recorder" data-action="collapse" readonly /></div>

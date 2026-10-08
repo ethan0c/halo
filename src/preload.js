@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('halo', {
   platform: process.platform,
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+  selectCaptureArea: () => ipcRenderer.invoke('screen:select-area'),
   capture: () => ipcRenderer.invoke('screen:capture'),
   ask: (req) => ipcRenderer.invoke('claude:ask', req),
   abort: (id) => ipcRenderer.invoke('claude:abort', id),

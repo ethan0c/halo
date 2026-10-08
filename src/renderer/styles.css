@@ -285,9 +285,11 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field label { font-size: 12px; font-weight: 500; color: var(--text-2); }
 .field small { font-size: 11px; }
+.capture-margins { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.capture-margins input { min-width: 0; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .row { display: flex; align-items: center; gap: 8px; }
-.settings input[type=text], .settings input[type=password], .settings select, .settings textarea {
+.settings input[type=number], .settings input[type=text], .settings input[type=password], .settings select, .settings textarea {
   width: 100%; padding: 7px 10px; border-radius: 10px;
   background: var(--input-bg); border: 1px solid var(--edge-soft); box-shadow: var(--inset);
   outline: none; user-select: text; resize: vertical; font-size: 12.5px;
@@ -326,3 +328,6 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 
 .progress { height: 3px; border-radius: 2px; background: var(--fill-1); box-shadow: var(--inset); overflow: hidden; }
 .progress > i { display: block; height: 100%; background: linear-gradient(90deg, var(--text-3), var(--text)); transition: width 0.2s; }
+
+.capture-preview { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.capture-preview img { max-width: 100%; max-height: 320px; object-fit: contain; border-radius: 8px; }

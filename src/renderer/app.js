@@ -58,7 +58,7 @@ halo.onBackdrop((lum) => {
 
 const DEFAULT_CAPTURE_PROMPT = 'Here is my screen. Figure out what I most likely need help with and handle it.';
 const HALLUCINATIONS = /^(thank you\.?|thanks for watching\.?|you\.?|bye\.?|\.+|\[.*\]|\(.*\))$/i;
-const ACTION_NAMES = { toggle: 'Show / hide', capture: 'Capture', listen: 'Listen', collapse: 'Collapse', dock: 'Move to corner' };
+const ACTION_NAMES = { selectArea: 'Select capture area', toggle: 'Show / hide', capture: 'Capture', listen: 'Listen', collapse: 'Collapse', dock: 'Move to corner' };
 
 let settings = {};
 let mode = 'idle';            // 'idle' | 'capture' | 'listen'
@@ -322,7 +322,27 @@ function trimOldScreenshots(messages) {
   return out;
 }
 
+let previewResolve = null;
+let selectingArea = false;
+function finishPreview(send) {
+  if (!previewResolve) return;
+  const resolve = previewResolve;
+  previewResolve = null;
+  show($('#capture-preview'), false);
+  $('#capture-preview-image').removeAttribute('src');
+  resolve(send);
+}
+$('#send-capture').addEventListener('click', () => finishPreview(true));
+$('#cancel-capture').addEventListener('click', () => finishPreview(false));
+function previewScreenshot(shot) {
+  $('#capture-preview-image').src = `data:${shot.mediaType};base64,${shot.data}`;
+  show($('#capture-preview'));
+  el.answer.innerHTML = '';
+  setStatus('Review screenshot before sending');
+  return new Promise(resolve => { previewResolve = resolve; });
+}
 async function runCapture(question = '') {
+  if (previewResolve || selectingArea) return;
   if (!settings.hasKey) return openSettings('account', 'Paste your Anthropic API key to get started.');
   if (mode === 'listen') await stopListening();
   mode = 'capture';
@@ -340,8 +360,13 @@ async function runCapture(question = '') {
       el.capture.classList.remove('busy');
       showError(err.message.replace(/^Error invoking remote method '[^']+': Error: /, ''));
       setStatus('');
-      if (convo.length === 0 && !question) return;
+      return; // Never reuse a previous image if the selected display / crop failed.
     }
+  }
+  if (shot && settings.previewCapture && !await previewScreenshot(shot)) {
+    el.capture.classList.remove('busy');
+    setStatus('Capture cancelled');
+    return;
   }
   const content = [];
   if (shot) content.push({ type: 'image', source: { type: 'base64', media_type: shot.mediaType, data: shot.data } });
@@ -711,6 +736,11 @@ async function loadSettings() {
   el.autoAnswer.checked = Boolean(settings.autoAnswer);
   el.systemAudio.checked = Boolean(settings.systemAudio);
   el.attachSetting.checked = settings.attachScreen !== false;
+  updateCaptureAreaUI();
+  for (const edge of ['top', 'bottom', 'left', 'right']) {
+    const key = `capture${edge[0].toUpperCase()}${edge.slice(1)}`;
+    $(`#capture-${edge}`).value = settings[key] ?? (edge === 'top' ? 120 : 0);
+  }
   el.noise.checked = settings.noiseSuppression !== false;
   el.keepFocus.checked = settings.keepFocus !== false;
   applyPreset();
@@ -758,6 +788,45 @@ el.askInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.sto
 for (const node of [el.mic, el.mic2]) node.addEventListener('change', () => { if (mode === 'listen') onInputLost('input'); });
 el.mic2.addEventListener('change', () => { if (el.mic2.value && el.mic2.value === el.mic.value) { el.mic2.value = ''; save({ mic2Id: '' }); } });
 el.attachSetting.addEventListener('change', () => save({ attachScreen: el.attachSetting.checked }));
+function updateCaptureAreaUI() {
+  const area = settings.captureArea;
+  $('#capture-area-status').textContent = area
+    ? `Saved area: ${area.width} × ${area.height} at (${area.x}, ${area.y}). Captures reuse this display and area.`
+    : 'No saved area. Captures use the margin crop on the display under your cursor.';
+  $('#clear-capture-area').disabled = !area;
+  $('#preview-capture').checked = Boolean(settings.previewCapture);
+}
+async function selectArea() {
+  if (selectingArea) return;
+  finishPreview(false);
+  selectingArea = true;
+  try {
+    settings = await halo.selectCaptureArea();
+    convo = [];
+    updateCaptureAreaUI();
+  } catch (err) { showError(err.message); }
+  finally { selectingArea = false; }
+}
+$('#select-capture-area').addEventListener('click', selectArea);
+$('#clear-capture-area').addEventListener('click', async () => {
+  finishPreview(false);
+  await save({ captureArea: null });
+  convo = [];
+  updateCaptureAreaUI();
+});
+$('#preview-capture').addEventListener('change', () => save({ previewCapture: $('#preview-capture').checked }));
+for (const edge of ['top', 'bottom', 'left', 'right']) {
+  const input = $(`#capture-${edge}`);
+  input.addEventListener('mousedown', () => { if (settings.keepFocus !== false) halo.focusInput(); });
+  input.addEventListener('blur', () => halo.releaseFocus());
+  input.addEventListener('change', async () => {
+    if (!input.reportValidity() || input.value === '') return;
+    const key = `capture${edge[0].toUpperCase()}${edge.slice(1)}`;
+    await save({ [key]: input.valueAsNumber });
+    // A follow-up must not reuse images containing newly excluded areas.
+    convo = [];
+  });
+}
 el.noise.addEventListener('change', () => { save({ noiseSuppression: el.noise.checked }); if (mode === 'listen') onInputLost('input'); });
 const debounced = (fn, ms = 400) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 el.context.addEventListener('input', debounced(() => save({ context: el.context.value })));
@@ -843,6 +912,7 @@ el.copy.addEventListener('click', async () => {
   const old = el.copy.textContent; el.copy.textContent = 'Copied'; setTimeout(() => { el.copy.textContent = old; }, 1200);
 });
 el.clear.addEventListener('click', async () => {
+  finishPreview(false);
   if (current) await halo.abort(current.id);
   convo = [];
   audio.segments = []; audio.answeredIndex = 0; audio.pendingAfter = false; clearTimeout(audio.pendingAnswer);
@@ -860,6 +930,7 @@ document.addEventListener('click', (e) => {
   if (a && /^https?:/i.test(a.href)) { e.preventDefault(); halo.openExternal(a.href); }
 });
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && previewResolve) { finishPreview(false); return; }
   if (e.key === 'Escape' && !e.target.classList.contains('recorder')) {
     if (!el.settings.classList.contains('hidden')) closeSettings();
     else halo.hide();
@@ -867,7 +938,8 @@ document.addEventListener('keydown', (e) => {
 });
 halo.onDocked((spot) => setStatus(`Moved to ${spot.replace('-', ' ')}`));
 halo.onHotkey(({ action }) => {
-  if (action === 'capture') runCapture(el.askInput.value.trim());
+  if (action === 'selectArea') selectArea();
+  else if (action === 'capture') runCapture(el.askInput.value.trim());
   else if (action === 'listen') toggleListening();
   else if (action === 'collapse') toggleCollapse();
   else if (action === 'settings') openSettings();

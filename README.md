@@ -6,7 +6,7 @@ A quiet AI copilot that floats over your screen and is invisible to screen recor
 
 ## What it does
 
-- **Capture** (`⌘⇧C`) — screenshots the display under your cursor and asks Claude what you most likely need (solve the problem on screen, answer the question, explain the error, draft the reply). Type a question in the bar to steer it; follow-ups keep the conversation.
+- **Capture** (`⌘⇧C`) — screenshots the cropped display under your cursor and asks Claude what you most likely need (solve the problem on screen, answer the question, explain the error, draft the reply). Type a question in the bar to steer it; follow-ups keep the conversation.
 - **Listen** (`⌘⇧L`) — interview mode. Transcribes the conversation with a Whisper model that runs entirely on your machine, then suggests what to say next as the interviewer talks. "Answer now" forces a suggestion; auto-suggest can be turned off.
 - **Invisible to capture** — the window is flagged `NSWindowSharingNone` (Electron `setContentProtection`), so Zoom, Meet, Teams, QuickTime and screen recordings all see straight through it. It also excludes itself from its own screenshots.
 - **Two presets** — **Talk** for video or in-person conversation: top of the screen, transcript, spoken-style answers, auto-suggest. **Code** for live coding: docked to a corner so it covers less of the editor, narrower, code-first answers, auto-suggest off because you trigger Capture on the problem. Each remembers where you last dragged it.
@@ -49,7 +49,11 @@ All four are `⌘⇧` plus a letter you can remember, and all four can be change
 | `⌘⇧D` | **D**ock: move the overlay to the next screen corner |
 | `Esc` | Hide |
 
-Drag the bar to move it; the position is remembered per preset. A typed question always comes with a fresh screenshot; Settings → General can turn that off for follow-ups to save tokens.
+Drag the bar to move it; the position is remembered per preset. Settings → General → Capture area lets you drag a rectangle once and reuse it for every capture, including after relaunch. **⌘⇧R** reselects the area; Esc cancels selection. The saved area stays on its original display even when the cursor moves elsewhere. Reselect after changing that display’s resolution; a missing display stops capture. Enable **Preview screenshot before sending** to review the cropped image locally and choose Send or Cancel. **Use margin crop** clears the saved area.
+
+Settings → General → Screenshot crop excludes screen edges before sending (top: 120 screen pixels by default, to hide browser tabs and the address bar). Adjust each margin for your layout or set all four to 0 for the full display. This is a fixed crop, so browser chrome elsewhere on the display needs larger margins. Changing margins clears the screenshot conversation so excluded content is not reused.
+
+A typed question always comes with a fresh screenshot; Settings → General can turn that off for follow-ups to save tokens.
 
 ## Settings
 

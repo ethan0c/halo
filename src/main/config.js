@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const DEFAULT_SHORTCUTS = {
   toggle: 'CommandOrControl+Shift+H',   // H for Halo: show / hide
+  selectArea: 'CommandOrControl+Shift+R', // R for capture Region
   capture: 'CommandOrControl+Shift+C',  // C for Capture
   listen: 'CommandOrControl+Shift+L',   // L for Listen
   collapse: 'CommandOrControl+Shift+M', // M for Minimize the panel to the bar
@@ -26,6 +27,12 @@ const DEFAULTS = {
   whisperModel: 'onnx-community/whisper-base',
   language: 'english',
   attachScreen: true,
+  captureArea: null,    // saved display-local rectangle
+  previewCapture: false,
+  captureTop: 120,      // logical pixels excluded before resizing / sending
+  captureBottom: 0,
+  captureLeft: 0,
+  captureRight: 0,
   preset: 'talk',       // 'talk' (video / in-person conversation) | 'code' (live coding)
   positions: {},        // per preset: { x, y, displayId } where the user last dragged it
   keepFocus: true,      // never take keyboard focus from the app you are in, except while typing

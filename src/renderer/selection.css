@@ -1,0 +1,5 @@
+:root { --veil: rgba(0,0,0,.2); --ink: #fff; --hint-bg: rgba(0,0,0,.8); --shade: rgba(0,0,0,.35); }
+* { box-sizing: border-box; }
+body { margin: 0; width: 100vw; height: 100vh; background: var(--veil); cursor: crosshair; user-select: none; overflow: hidden; }
+#hint { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); padding: 12px 18px; border-radius: 12px; color: var(--ink); background: var(--hint-bg); font: 14px system-ui; pointer-events: none; }
+#selection { position: fixed; border: 2px solid var(--ink); box-shadow: 0 0 0 10000px var(--shade); pointer-events: none; }

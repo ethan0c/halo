@@ -19,7 +19,7 @@ await build({
   logLevel: 'info',
 });
 
-for (const f of ['index.html', 'pcm-worklet.js']) copyFileSync(join('src/renderer', f), join(dist, f));
+for (const f of ['index.html', 'pcm-worklet.js', 'selection.html', 'selection.js', 'selection.css']) copyFileSync(join('src/renderer', f), join(dist, f));
 
 // Ship every ONNX Runtime wasm variant next to the app so transcription never
 // touches a CDN. Which variant gets loaded (asyncify, jspi, jsep, plain) depends
