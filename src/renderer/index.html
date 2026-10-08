@@ -11,6 +11,10 @@
   <div id="app">
     <header class="bar" id="bar">
       <div class="logo" id="logo" title="Halo"></div>
+      <div class="seg" id="preset" title="Talk: conversation interviews. Code: live coding, docked to the side.">
+        <button data-preset="talk" class="active">Talk</button>
+        <button data-preset="code">Code</button>
+      </div>
 
       <button id="btn-capture" class="chip" title="Capture the screen and ask Claude">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><circle cx="12" cy="12" r="3.2"/></svg>
@@ -26,10 +30,6 @@
         <input id="ask-input" type="text" placeholder="Ask about your screen…" spellcheck="false" />
       </form>
 
-      <label class="toggle icon" id="attach-label" title="Attach a fresh screenshot with each question">
-        <input type="checkbox" id="attach-screen" checked />
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="13" rx="2"/><path d="M8 21h8"/></svg>
-      </label>
 
       <button id="btn-collapse" class="icon hidden" title="Collapse / expand the panel">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
@@ -46,6 +46,7 @@
       <div id="transcript" class="transcript hidden"></div>
       <div id="answer" class="answer"></div>
       <footer class="panel-foot">
+        <span class="vu mini-vu hidden" id="vu-wrap"><i id="vu"></i></span>
         <span id="status" class="status"></span>
         <span class="spacer"></span>
         <button id="btn-stop" class="mini hidden">Stop</button>
@@ -89,9 +90,21 @@
             </select>
           </div>
         </div>
+        <div class="grid">
+          <div class="field">
+            <label for="theme-mode">Appearance</label>
+            <select id="theme-mode">
+              <option value="auto">Auto · match what's behind the overlay</option>
+              <option value="dark">Always dark glass</option>
+              <option value="light">Always light glass</option>
+            </select>
+            <small class="muted" id="theme-note">Auto samples the screen under the pill every 2 s (needs Screen Recording).</small>
+          </div>
+        </div>
         <div class="row checks">
           <label class="check"><input type="checkbox" id="auto-answer" /> Auto-suggest answers while listening</label>
-          <label class="check"><input type="checkbox" id="attach-screen-setting" /> Attach a screenshot to typed questions</label>
+          <label class="check" title="Off: typed follow-ups reuse the last screenshot instead of taking a new one (saves tokens)."><input type="checkbox" id="attach-screen-setting" /> Take a fresh screenshot for every typed question</label>
+          <label class="check" title="Buttons and hotkeys never take keyboard focus from your call or editor. Only the question box does, and it gives it back on Enter or Esc."><input type="checkbox" id="keep-focus" /> Don't steal focus from other apps</label>
         </div>
       </div>
 
@@ -119,9 +132,21 @@
       <div class="tab-page hidden" data-page="audio">
         <div class="grid">
           <div class="field">
-            <label for="mic">Microphone / input</label>
+            <label for="mic">Your microphone</label>
             <select id="mic"><option value="">System default</option></select>
-            <small class="muted">To hear the interviewer, use speakers or pick a loopback device (e.g. BlackHole).</small>
+            <small class="muted">Shared with Zoom/Meet without conflict. If it vanishes mid-call Halo falls back to the default.</small>
+          </div>
+          <div class="field">
+            <label for="mic2">Second input <span class="muted">(the call audio)</span></label>
+            <select id="mic2"><option value="">None</option></select>
+            <small class="muted">Pick a loopback device such as BlackHole to hear the interviewer; both inputs are mixed.</small>
+          </div>
+        </div>
+        <div class="grid">
+          <div class="field">
+            <label>Input level</label>
+            <div class="vu"><i id="vu-settings"></i></div>
+            <small class="muted" id="vu-note">Press Listen to see live levels here.</small>
           </div>
           <div class="field">
             <label for="whisper-model">Speech model (runs locally)</label>
@@ -133,8 +158,10 @@
           </div>
         </div>
         <div class="row checks">
+          <label class="check" title="Chromium's noise suppression, echo cancellation and automatic gain on every input."><input type="checkbox" id="noise-suppression" /> Suppress background noise</label>
           <label class="check" id="system-audio-label"><input type="checkbox" id="system-audio" /> Also capture system audio</label>
         </div>
+        <small class="muted">With a second input set, the transcript is labelled "You" and "Interviewer" and suggestions key off the interviewer's side only.</small>
       </div>
 
       <div class="tab-page hidden" data-page="shortcuts">
@@ -143,6 +170,7 @@
           <div class="shortcut-row"><span>Capture screen &amp; ask</span><input class="recorder" data-action="capture" readonly /></div>
           <div class="shortcut-row"><span>Start / stop listening</span><input class="recorder" data-action="listen" readonly /></div>
           <div class="shortcut-row"><span>Collapse / expand panel</span><input class="recorder" data-action="collapse" readonly /></div>
+          <div class="shortcut-row"><span>Move to next corner</span><input class="recorder" data-action="dock" readonly /></div>
         </div>
         <div class="row">
           <small class="muted">Click a field and press the keys you want. <kbd>Esc</kbd> always hides the overlay.</small>

@@ -9,6 +9,7 @@ const DEFAULT_SHORTCUTS = {
   capture: 'CommandOrControl+Shift+C',  // C for Capture
   listen: 'CommandOrControl+Shift+L',   // L for Listen
   collapse: 'CommandOrControl+Shift+M', // M for Minimize the panel to the bar
+  dock: 'CommandOrControl+Shift+D',     // D for Dock: cycle the overlay between screen corners
 };
 const DEFAULTS = {
   model: 'claude-opus-5-5',
@@ -16,12 +17,18 @@ const DEFAULTS = {
   context: '',          // free-form notes about the user
   resume: null,         // { name, text }
   job: '',              // job description text
-  micId: '',
+  micId: '',            // your voice
+  mic2Id: '',           // optional second input (loopback device carrying the call audio)
   systemAudio: false,
+  noiseSuppression: true, // browser-side noise suppression, echo cancellation and auto gain on every input
+  themeMode: 'auto',    // 'auto' samples the backdrop | 'dark' | 'light'
   autoAnswer: true,
   whisperModel: 'onnx-community/whisper-base',
   language: 'english',
   attachScreen: true,
+  preset: 'talk',       // 'talk' (video / in-person conversation) | 'code' (live coding)
+  positions: {},        // per preset: { x, y, displayId } where the user last dragged it
+  keepFocus: true,      // never take keyboard focus from the app you are in, except while typing
   shortcuts: { ...DEFAULT_SHORTCUTS },
 };
 const PUBLIC_KEYS = Object.keys(DEFAULTS);

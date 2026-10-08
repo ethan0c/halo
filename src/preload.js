@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld('halo', {
   importDocument: () => ipcRenderer.invoke('document:import'),
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   resize: (height) => ipcRenderer.send('window:resize', height),
+  setPreset: (preset) => ipcRenderer.invoke('window:preset', preset),
+  dock: () => ipcRenderer.invoke('window:dock'),
+  focusInput: () => ipcRenderer.send('window:focus-input'),
+  releaseFocus: () => ipcRenderer.send('window:release-focus'),
   hide: () => ipcRenderer.send('window:hide'),
   quit: () => ipcRenderer.send('app:quit'),
   onClaude: (fn) => {
@@ -19,4 +23,7 @@ contextBridge.exposeInMainWorld('halo', {
     return () => ipcRenderer.removeListener('claude:event', handler);
   },
   onHotkey: (fn) => ipcRenderer.on('hotkey', (_e, data) => fn(data)),
+  onTheme: (fn) => ipcRenderer.on('theme', (_e, theme) => fn(theme)),
+  onDocked: (fn) => ipcRenderer.on('docked', (_e, spot) => fn(spot)),
+  onBackdrop: (fn) => ipcRenderer.on('backdrop', (_e, lum) => fn(lum)),
 });

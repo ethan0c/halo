@@ -18,8 +18,13 @@ Halo needs two permissions. In development they are granted to **Electron**, not
 - **Shortcuts do nothing.** Another app owns the combination. Settings → Shortcuts flags the ones that failed to register; pick a different combination there. Halo runs as a single instance, so a second launch just focuses the first.
 - **The panel vanished but the bar is still there.** It is collapsed (`⌘⇧M` or the chevron). Press it again to expand. A dot on the chevron means a new suggestion arrived while collapsed.
 - **I can see it in my screen share.** You started with `npm run dev`, which deliberately turns protection off. Use `npm start`. Also note content protection hides the window from software capture only; a phone pointed at the monitor still sees it.
+- **I can't type in the question box.** Click it (not just hover). With "Don't steal focus" on, the window only becomes focusable on click and gives focus back on Enter or Esc. Turn the option off in Settings → General if you prefer a normal window.
+- **My call or test page says I left the window.** That happens when Halo takes keyboard focus. Keep "Don't steal focus" on, use hotkeys and buttons, and only click the question box when you need to type.
+- **It moved somewhere odd.** `⌘⇧D` cycles the corners. Each preset (Talk, Code) remembers where you last dragged it; docking clears that memory.
 - **It is not on top of a full-screen app.** Move the cursor to that display and press `⌘⇧Space` twice. The window is set to show over full-screen Spaces, but macOS occasionally needs the re-show after a Space switch.
-- **Glass looks flat.** The blur comes from macOS vibrancy. Reduce Transparency in Accessibility settings disables it system-wide.
+- **The glass keeps flipping between dark and light.** A flip needs three agreeing samples (about 6 s) and the luminance has to cross a wide dead zone (below 0.3 or above 0.6). If what is behind the pill genuinely alternates, pin a theme in Settings → General.
+- **The glass is the wrong shade for what's behind it.** Auto needs Screen Recording permission; without it, Halo follows the macOS appearance. You can force dark or light glass in Settings → General.
+- **Glass looks nearly solid.** That is on purpose. The tint is 80 to 95 percent opaque and gets more solid the closer the backdrop is to the glass shade (white page under light glass, black terminal under dark glass). Readability wins over blur.
 
 ## Claude
 
@@ -35,10 +40,18 @@ Answers are capped at 4096 output tokens on purpose; the overlay is for quick he
 
 ## Interview mode
 
+- **`Error: net::ERR_FILE_NOT_FOUND` in the terminal when pressing Listen.** The renderer asked for a file that is not in `dist/`. Halo now logs which path it was and answers 404 instead of throwing. The usual cause is an ONNX Runtime wasm variant missing from `dist/ort/`; `npm run build` copies every variant, so rebuild.
+- **Download progress jumps around or restarts.** Fixed: progress is now aggregated across all model files. If you see a single file bouncing, you are on an old build.
 - **Speech model never finishes downloading.** It is fetched from Hugging Face on first use (tiny ≈ 80 MB, base ≈ 150 MB, small ≈ 500 MB). Check the connection, then press Listen again; downloads resume from cache.
+- **Zoom or Meet is using my mic. Is that a conflict?** No. macOS lets several apps read the same microphone. If a device is held exclusively (some Windows drivers) or unplugged, Halo falls back to the system default and says so in the status line.
+- **My headset was unplugged mid-interview.** Halo reconnects on its own and keeps the transcript. If the device you picked is gone, it uses the default until you choose again.
+- **Background noise is getting transcribed.** Keep "Suppress background noise" on in Settings → Audio. If a fan or street noise still leaks through, move the mic closer; a dedicated denoiser is a documented next step in `docs/architecture.md`.
+- **Who said what is wrong.** Speaker labels come from which input the audio arrived on, not from voice recognition. Your microphone is "You"; the second input is "Interviewer". If the interviewer's voice reaches your microphone (speakers, no loopback), it is transcribed as "You".
+- **Is any audio arriving?** Watch the level meter in the panel footer or in Settings → Audio. If it stays flat while you talk, the wrong input is selected.
 - **Transcript is empty while people are talking.** Open Settings and pick the right input. If the interviewer is on headphones, the mic cannot hear them: either use speakers or install a loopback driver such as BlackHole, create a Multi-Output Device in Audio MIDI Setup that includes BlackHole and your headphones, and select BlackHole as Halo's input. Direct system-audio capture is only supported by Electron on Windows.
 - **Transcript is garbled.** Switch to Whisper small, or raise the model from tiny. Background noise raises the adaptive noise floor; a quieter room helps.
-- **Suggestions come too often or too late.** Auto-suggest waits for ~0.9 s of silence after a new segment with at least four new words. Turn it off and use "Answer now" if you prefer to control timing.
+- **Suggestions come too often or too late.** Auto-suggest only fires when the new speech looks like a question (a question mark, or an opener such as "tell me" or "how would"), about 1.4 s after you stop talking. Plain conversation leaves the current answer on screen. Press "Answer now" for a suggestion on demand, or turn auto-suggest off.
+- **The answer vanished while I was still reading it.** That was the old behaviour. A new suggestion now dims the current answer and replaces it only once the new text starts streaming.
 - **It transcribes "Thank you." out of nothing.** A known Whisper quirk on silence; the common ones are filtered. Lower your mic gain if it persists.
 
 ## Profile documents

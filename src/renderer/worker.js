@@ -14,8 +14,8 @@ async function load(model) {
   if (transcriber && loadedModel === model) return;
   transcriber = null;
   const progress_callback = (p) => {
-    if (p.status === 'progress') self.postMessage({ type: 'progress', file: p.file, progress: p.progress });
-    else if (p.status === 'initiate' || p.status === 'download') self.postMessage({ type: 'progress', file: p.file, progress: 0 });
+    if (!['initiate', 'download', 'progress', 'done'].includes(p.status)) return;
+    self.postMessage({ type: 'progress', status: p.status, file: p.file, progress: p.progress, loaded: p.loaded, total: p.total });
   };
   const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
   const attempts = hasWebGPU
@@ -47,7 +47,7 @@ self.onmessage = async (e) => {
       const opts = { chunk_length_s: 30, return_timestamps: false };
       if (!/\.en$/.test(loadedModel) && msg.language) { opts.language = msg.language; opts.task = 'transcribe'; }
       const out = await transcriber(msg.audio, opts);
-      self.postMessage({ type: 'result', id: msg.id, text: (out?.text || '').trim() });
+      self.postMessage({ type: 'result', id: msg.id, speaker: msg.speaker || null, text: (out?.text || '').trim() });
     }
   } catch (err) {
     self.postMessage({ type: 'error', id: msg.id, message: err?.message || String(err) });

@@ -12,6 +12,8 @@ Rules:
 
 const CAPTURE_SYSTEM = `${BASE_SYSTEM}
 
+The transcript may carry speaker labels ("Interviewer:" and "You:"). When it does, answer the interviewer's latest turn and treat "You:" lines as what the candidate already said.
+
 The user has shared a screenshot of their screen. Work out what they most likely need help with (a question, a problem, an error, a form, a message to reply to, a document to understand) and handle it. If several things are on screen, address the most prominent or most recent one and mention the others in one line.`;
 
 const INTERVIEW_SYSTEM = `${BASE_SYSTEM}
@@ -23,8 +25,21 @@ You are whispering to a candidate during a live interview. You receive a rolling
 - If the latest speech is not a question (small talk, the candidate mid-answer), give 1 to 3 short talking points to continue with.
 - Use the candidate's background below when it is relevant; never invent experience they do not have.`;
 
+const CODE_PRESET = `
+
+Setting: a live coding interview. The candidate is typing in a shared editor while talking. Use exactly this shape, with these bold labels and nothing before the first one:
+**Approach** — one or two lines.
+**Code** — the complete solution in the language visible on screen (or the transcript's), in one fenced block.
+**Complexity** — time and space, one line.
+**Edge cases** — two to four bullets worth saying out loud.
+**How to explain it** — two or three short bullets the candidate can use to walk through the solution in their own words: the key insight, why the obvious alternative is worse, and what to say while typing it.`;
+
+const TALK_PRESET = `
+
+Setting: a conversational interview (video call or in person). Everything you give will be spoken, so write for the ear: no headings, no code unless asked, concrete examples over abstractions.`;
+
 function buildSystem(mode, profile = {}) {
-  const base = mode === 'listen' ? INTERVIEW_SYSTEM : CAPTURE_SYSTEM;
+  const base = (mode === 'listen' ? INTERVIEW_SYSTEM : CAPTURE_SYSTEM) + (profile.preset === 'code' ? CODE_PRESET : TALK_PRESET);
   const parts = [];
   if (profile.resume?.text) parts.push(`<resume source="${profile.resume.name || 'resume'}">\n${profile.resume.text.trim()}\n</resume>`);
   if ((profile.job || '').trim()) parts.push(`<job_description>\n${profile.job.trim()}\n</job_description>`);

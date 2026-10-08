@@ -4,11 +4,13 @@ export const LOGO_SVG = `
 <svg class="halo-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
   <defs>
     <linearGradient id="halo-g" x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#9a9a9f"/>
-      <stop offset="1" stop-color="#ffffff"/>
+      <stop class="ring-a" offset="0" stop-color="#9a9a9f"/>
+      <stop class="ring-b" offset="1" stop-color="#ffffff"/>
     </linearGradient>
   </defs>
+  <g class="halo-spin">
   <circle class="halo-ring" cx="12" cy="12" r="9.2" stroke="url(#halo-g)" stroke-width="2.6" stroke-linecap="round"
     stroke-dasharray="46.6 11.2" stroke-dashoffset="-11.2" transform="rotate(-80 12 12)"/>
   <circle class="halo-spark" cx="18.5" cy="5.5" r="2.1" fill="#f4f4f5"/>
+  </g>
 </svg>`;

@@ -8,17 +8,18 @@ const isMac = halo.platform === 'darwin';
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => Array.from(document.querySelectorAll(sel));
 const el = {
-  app: $('#app'), logo: $('#logo'), logo2: $('#logo-2'),
+  app: $('#app'), bar: $('#bar'), logo: $('#logo'), logo2: $('#logo-2'),
   capture: $('#btn-capture'), listen: $('#btn-listen'),
-  askForm: $('#ask-form'), askInput: $('#ask-input'), attach: $('#attach-screen'),
-  collapse: $('#btn-collapse'), settingsBtn: $('#btn-settings'), hideBtn: $('#btn-hide'),
+  askForm: $('#ask-form'), askInput: $('#ask-input'),
+  collapse: $('#btn-collapse'), settingsBtn: $('#btn-settings'), hideBtn: $('#btn-hide'), preset: $('#preset'), keepFocus: $('#keep-focus'),
   panel: $('#panel'), transcript: $('#transcript'), answer: $('#answer'), status: $('#status'),
   stop: $('#btn-stop'), answerNow: $('#btn-answer-now'), copy: $('#btn-copy'), clear: $('#btn-clear'),
   settings: $('#settings'), closeSettings: $('#btn-close-settings'), hint: $('#settings-hint'), tabs: $('#tabs'),
-  model: $('#model'), effort: $('#effort'), autoAnswer: $('#auto-answer'), attachSetting: $('#attach-screen-setting'),
+  model: $('#model'), effort: $('#effort'), autoAnswer: $('#auto-answer'), attachSetting: $('#attach-screen-setting'), noise: $('#noise-suppression'),
   uploadResume: $('#btn-upload-resume'), resumeStatus: $('#resume-status'), removeResume: $('#btn-remove-resume'),
   job: $('#job'), uploadJob: $('#btn-upload-job'), jobStatus: $('#job-status'), context: $('#context'),
-  mic: $('#mic'), whisperModel: $('#whisper-model'), systemAudio: $('#system-audio'), systemAudioLabel: $('#system-audio-label'),
+  mic: $('#mic'), mic2: $('#mic2'), whisperModel: $('#whisper-model'), systemAudio: $('#system-audio'), systemAudioLabel: $('#system-audio-label'),
+  themeMode: $('#theme-mode'), themeNote: $('#theme-note'), vu: $('#vu'), vuWrap: $('#vu-wrap'), vuSettings: $('#vu-settings'), vuNote: $('#vu-note'),
   resetShortcuts: $('#btn-reset-shortcuts'), shortcutError: $('#shortcut-error'),
   apiKey: $('#api-key'), saveKey: $('#btn-save-key'), keyStatus: $('#key-status'), quit: $('#btn-quit'),
 };
@@ -26,9 +27,38 @@ el.logo.innerHTML = LOGO_SVG;
 el.logo2.innerHTML = LOGO_SVG;
 marked.setOptions({ gfm: true, breaks: true });
 
+// Theme: main decides (sampled backdrop or manual); until it does, follow the OS.
+const root = document.documentElement;
+root.dataset.theme = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+let themeTimer = null;
+// A theme flip crossfades the whole overlay (gradients cannot transition, so
+// swapping tokens in place looks like a glitch).
+function setTheme(t) {
+  const next = t === 'light' ? 'light' : 'dark';
+  if (root.dataset.theme === next) return;
+  clearTimeout(themeTimer);
+  root.classList.add('theme-switching');
+  themeTimer = setTimeout(() => {
+    root.dataset.theme = next;
+    requestAnimationFrame(() => requestAnimationFrame(() => root.classList.remove('theme-switching')));
+  }, 150);
+}
+halo.onTheme(setTheme);
+// Glass opacity follows the backdrop: the closer the backdrop is to the glass's
+// own shade (white page under light glass, black under dark), the more solid.
+let glassA = 0.88;
+halo.onBackdrop((lum) => {
+  const light = root.dataset.theme === 'light';
+  const closeness = light ? 1 - lum : lum;
+  const a = Math.min(0.95, Math.max(0.8, 0.8 + 0.15 * closeness));
+  if (Math.abs(a - glassA) < 0.02) return; // ignore jitter; @property transition smooths the rest
+  glassA = a;
+  root.style.setProperty('--glass-a', a.toFixed(3));
+});
+
 const DEFAULT_CAPTURE_PROMPT = 'Here is my screen. Figure out what I most likely need help with and handle it.';
 const HALLUCINATIONS = /^(thank you\.?|thanks for watching\.?|you\.?|bye\.?|\.+|\[.*\]|\(.*\))$/i;
-const ACTION_NAMES = { toggle: 'Show / hide', capture: 'Capture', listen: 'Listen', collapse: 'Collapse' };
+const ACTION_NAMES = { toggle: 'Show / hide', capture: 'Capture', listen: 'Listen', collapse: 'Collapse', dock: 'Move to corner' };
 
 let settings = {};
 let mode = 'idle';            // 'capture' | 'listen'
@@ -123,18 +153,58 @@ function selectTab(name) {
   $$('.tab-page').forEach((p) => show(p, p.dataset.page === name));
 }
 
-// Keep the native window exactly as tall as the content.
-new ResizeObserver(() => halo.resize(el.app.getBoundingClientRect().height)).observe(el.app);
+// ---------------------------------------------------------------- layout
+// The window is sized from the content, never the other way round: as tall as
+// #app, and at least as wide as every visible bar control plus a usable input.
+const ASK_MIN = { talk: 200, code: 150 };
+function neededWidth() {
+  const bar = el.bar;
+  const cs = getComputedStyle(bar);
+  const gap = parseFloat(cs.columnGap) || 0;
+  const kids = Array.from(bar.children).filter((k) => getComputedStyle(k).display !== 'none');
+  let w = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + parseFloat(cs.borderLeftWidth) + parseFloat(cs.borderRightWidth);
+  for (const k of kids) {
+    if (k === el.askForm) w += ASK_MIN[el.app.dataset.preset === 'code' ? 'code' : 'talk'];
+    else w += k.getBoundingClientRect().width;
+  }
+  w += gap * Math.max(0, kids.length - 1);
+  const appStyle = getComputedStyle(el.app);
+  return Math.ceil(w + parseFloat(appStyle.paddingLeft) + parseFloat(appStyle.paddingRight));
+}
+let layoutQueued = false;
+function requestLayout() {
+  if (layoutQueued) return;
+  layoutQueued = true;
+  requestAnimationFrame(() => {
+    layoutQueued = false;
+    halo.resize({ height: el.app.getBoundingClientRect().height, width: neededWidth() });
+  });
+}
+new ResizeObserver(requestLayout).observe(el.app);
+new MutationObserver(requestLayout).observe(el.bar, { subtree: true, attributes: true, attributeFilter: ['class', 'style'], childList: true });
+document.fonts?.ready.then(requestLayout);
 
 // ---------------------------------------------------------------- Claude
 halo.onClaude((ev) => {
   if (!current || ev.id !== current.id) return;
-  if (ev.type === 'delta') { current.text += ev.text; renderAnswer(true); return; }
+  if (ev.type === 'delta') {
+    current.text += ev.text;
+    if (!current.started) { current.started = true; el.answer.classList.remove('stale'); }
+    renderAnswer(true);
+    return;
+  }
   const finished = current;
   current = null;
-  el.logo.classList.remove('thinking');
+  el.app.classList.remove('thinking');
   el.capture.classList.remove('busy');
+  el.answer.classList.remove('stale');
   show(el.stop, false);
+  if (finished.keep && !finished.started && ev.type !== 'done') {
+    // Nothing new ever arrived: leave the previous answer exactly as it was.
+    if (ev.type === 'error') setStatus(ev.message || 'Could not get a new suggestion.');
+    if (finished.mode === 'listen' && audio.pendingAfter) { audio.pendingAfter = false; scheduleAutoAnswer(); }
+    return;
+  }
   if (ev.type === 'done') {
     finished.text = ev.text || finished.text;
     el.answer.innerHTML = finished.text ? marked.parse(finished.text) : '<p class="empty">No answer.</p>';
@@ -142,6 +212,10 @@ halo.onClaude((ev) => {
     const usage = ev.usage ? ` · ${ev.usage.input_tokens + ev.usage.output_tokens} tok` : '';
     setStatus(`${ev.model || settings.model}${usage}${finished.mode === 'listen' ? ' · listening' : ''}`);
     if (collapsed) el.collapse.classList.add('unread');
+    if (finished.mode === 'listen') {
+      audio.lastAnswerAt = Date.now();
+      if (audio.pendingAfter) { audio.pendingAfter = false; scheduleAutoAnswer(); }
+    }
   } else if (ev.type === 'aborted') {
     if (finished.mode === 'capture') convo.pop();
     el.answer.innerHTML = finished.text ? marked.parse(finished.text) : '<p class="empty">Cancelled.</p>';
@@ -152,13 +226,18 @@ halo.onClaude((ev) => {
   }
 });
 
-async function ask(reqMode, messages, { force = true } = {}) {
+/**
+ * Streams one answer. With `keep`, the answer currently on screen stays visible
+ * (dimmed) until the new one starts streaming, so the panel never blanks.
+ */
+async function ask(reqMode, messages, { force = true, keep = false } = {}) {
   if (current) await halo.abort(current.id);
   const id = `r${++reqCounter}`;
-  current = { id, text: '', mode: reqMode };
+  current = { id, text: '', mode: reqMode, keep: keep && el.answer.textContent.trim().length > 0, started: false };
   openPanel({ force });
-  el.answer.innerHTML = '<p class="empty">Thinking…</p>';
-  el.logo.classList.add('thinking');
+  if (current.keep) el.answer.classList.add('stale');
+  else el.answer.innerHTML = `<div class="skeleton"><i></i><i></i><i></i><small>${reqMode === 'listen' ? 'Drafting what to say' : 'Reading your screen'}</small></div>`;
+  el.app.classList.add('thinking');
   show(el.stop);
   setStatus(reqMode === 'listen' ? 'Suggesting what to say…' : 'Asking Claude…');
   halo.ask({ id, mode: reqMode, messages });
@@ -192,7 +271,7 @@ async function runCapture(question = '') {
   el.capture.classList.add('busy');
 
   let shot = null;
-  const wantShot = el.attach.checked || convo.length === 0;
+  const wantShot = settings.attachScreen !== false || convo.length === 0;
   if (wantShot) {
     setStatus('Capturing screen…');
     try { shot = await halo.capture(); }
@@ -212,18 +291,34 @@ async function runCapture(question = '') {
 }
 
 // ---------------------------------------------------------------- listening
+// Each input is its own channel with its own voice detection and chunking, so a
+// segment knows who spoke: 'you' (microphone) or 'them' (second input carrying
+// the call audio). With one input the speaker is unknown and nothing is labelled.
 const audio = {
-  ctx: null, node: null, streams: [], worker: null, ready: false,
-  chunks: [], chunkSamples: 0, hadSpeech: false, lastSpeech: 0, noise: 0.004, jobs: 0,
-  segments: [], answeredChars: 0, pendingAnswer: null,
+  ctx: null, channels: [], streams: [], worker: null, ready: false, reconnecting: false, jobs: 0,
+  segments: [], answeredIndex: 0, pendingAnswer: null, pendingAfter: false, lastAnswerAt: 0,
 };
 const SR = 16000;
+const SPEAKER_NAME = { you: 'You', them: 'Interviewer' };
 
-function transcriptText() { return audio.segments.map((s) => s.text).join(' '); }
+function makeChannel(speaker) {
+  return { speaker, node: null, chunks: [], chunkSamples: 0, hadSpeech: false, lastSpeech: performance.now(), noise: 0.004 };
+}
+const labelled = () => audio.channels.some((c) => c.speaker === 'them');
+function segmentLine(seg) { return seg.speaker && labelled() ? `${SPEAKER_NAME[seg.speaker]}: ${seg.text}` : seg.text; }
+function transcriptText(segments = audio.segments) { return segments.map(segmentLine).join(labelled() ? '\n' : ' '); }
+/** Text since the last answer. With labelled speakers, only the interviewer's words count for question detection. */
+function freshText() {
+  const fresh = audio.segments.slice(audio.answeredIndex);
+  return (labelled() ? fresh.filter((s) => s.speaker === 'them') : fresh).map((s) => s.text).join(' ').trim();
+}
 function renderTranscript() {
   const segs = audio.segments.slice(-6);
-  el.transcript.innerHTML = segs.map((s, i) => `<span class="seg${i === segs.length - 1 ? ' latest' : ''}">${escapeHtml(s.text)} </span>`).join('')
-    + (audio.jobs > 0 ? '<span class="interim">…</span>' : '');
+  const tagged = labelled();
+  el.transcript.innerHTML = segs.map((s, i) => {
+    const who = tagged && s.speaker && (i === 0 || segs[i - 1].speaker !== s.speaker) ? `<span class="who">${SPEAKER_NAME[s.speaker]}</span>` : '';
+    return `<span class="seg ${s.speaker || ''}${i === segs.length - 1 ? ' latest' : ''}">${who}${escapeHtml(s.text)} </span>`;
+  }).join('') + (audio.jobs > 0 ? '<span class="interim">…</span>' : '');
   el.transcript.scrollTop = el.transcript.scrollHeight;
 }
 
@@ -233,19 +328,20 @@ function ensureWorker() {
   audio.worker.onmessage = (e) => {
     const m = e.data;
     if (m.type === 'progress') {
-      const pct = Math.round(m.progress || 0);
-      setStatus(`Downloading speech model… ${pct}%`);
-      el.answer.innerHTML = `<p class="empty">First run: fetching the local Whisper model (${escapeHtml(m.file || '')}). This happens once.</p><div class="progress"><i style="width:${pct}%"></i></div>`;
+      if (mode !== 'listen' || audio.ready) return;
+      renderDownload(m);
     } else if (m.type === 'ready') {
       audio.ready = true;
-      setStatus(`Listening · local Whisper on ${m.device}`);
-      if (mode === 'listen') el.answer.innerHTML = '<p class="empty">Listening. Answers appear here as the conversation unfolds.</p>';
+      audio.download = null;
+      if (mode !== 'listen') return;
+      setStatus(audio.inputNotice || `Listening · local Whisper on ${m.device}`);
+      el.answer.innerHTML = '<p class="empty">Listening. Answers appear here as the conversation unfolds.</p>';
     } else if (m.type === 'result') {
       audio.jobs = Math.max(0, audio.jobs - 1);
       const text = (m.text || '').trim();
       if (text && !HALLUCINATIONS.test(text)) {
-        audio.segments.push({ text, t: Date.now() });
-        if (audio.segments.length > 60) audio.segments.shift();
+        audio.segments.push({ text, speaker: m.speaker || null, t: Date.now() });
+        if (audio.segments.length > 60) { audio.segments.shift(); audio.answeredIndex = Math.max(0, audio.answeredIndex - 1); }
         scheduleAutoAnswer();
       }
       renderTranscript();
@@ -257,55 +353,104 @@ function ensureWorker() {
   };
 }
 
-function onPcm(samples) {
-  // Simple energy-based voice activity detection with an adaptive noise floor.
+// transformers.js reports progress per file and the files download in parallel,
+// so a single file's percentage jumps around. Aggregate bytes across all files.
+function renderDownload(m) {
+  const d = audio.download || (audio.download = { files: new Map(), started: Date.now() });
+  if (m.file) {
+    const prev = d.files.get(m.file) || { loaded: 0, total: 0 };
+    if (m.status === 'done') prev.loaded = prev.total || prev.loaded;
+    else {
+      if (Number.isFinite(m.total) && m.total > 0) prev.total = m.total;
+      if (Number.isFinite(m.loaded)) prev.loaded = m.loaded;
+      else if (Number.isFinite(m.progress) && prev.total) prev.loaded = (m.progress / 100) * prev.total;
+    }
+    d.files.set(m.file, prev);
+  }
+  let loaded = 0, total = 0;
+  for (const f of d.files.values()) { loaded += f.loaded; total += f.total; }
+  const pct = total ? Math.min(99, Math.round((loaded / total) * 100)) : 0;
+  const mb = (n) => (n / 1048576).toFixed(0);
+  const sizeText = total ? ` · ${mb(loaded)} / ${mb(total)} MB` : '';
+  setStatus(`Downloading speech model ${pct}%${sizeText}`);
+  let bar = el.answer.querySelector('.progress > i');
+  if (!bar) {
+    el.answer.innerHTML = `<p class="empty">First run only: fetching the local Whisper model so transcription never leaves this Mac.</p><div class="progress"><i></i></div><p class="empty download-note"></p>`;
+    bar = el.answer.querySelector('.progress > i');
+  }
+  bar.style.width = `${pct}%`;
+  el.answer.querySelector('.download-note').textContent = total ? `${d.files.size} file${d.files.size === 1 ? '' : 's'}${sizeText.slice(3)}` : 'Starting…';
+}
+
+function onPcm(ch, samples) {
+  // Simple energy-based voice activity detection with an adaptive noise floor, per channel.
   let sum = 0;
   for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
   const rms = Math.sqrt(sum / samples.length);
   const now = performance.now();
-  if (rms < audio.noise * 1.5) audio.noise = audio.noise * 0.95 + rms * 0.05; // track silence
-  const speaking = rms > Math.max(0.012, audio.noise * 3.5);
+  if (rms < ch.noise * 1.5) ch.noise = ch.noise * 0.95 + rms * 0.05; // track silence
+  const speaking = rms > Math.max(0.012, ch.noise * 3.5);
+  updateVu(rms);
 
-  audio.chunks.push(samples);
-  audio.chunkSamples += samples.length;
-  if (speaking) { audio.hadSpeech = true; audio.lastSpeech = now; }
+  ch.chunks.push(samples);
+  ch.chunkSamples += samples.length;
+  if (speaking) { ch.hadSpeech = true; ch.lastSpeech = now; }
 
-  const seconds = audio.chunkSamples / SR;
-  const silentFor = now - audio.lastSpeech;
-  if (audio.hadSpeech && ((silentFor > 700 && seconds >= 1.0) || seconds >= 14)) flushChunk();
-  else if (!audio.hadSpeech && seconds > 2) {
+  const seconds = ch.chunkSamples / SR;
+  const silentFor = now - ch.lastSpeech;
+  if (ch.hadSpeech && ((silentFor > 700 && seconds >= 1.0) || seconds >= 14)) flushChunk(ch);
+  else if (!ch.hadSpeech && seconds > 2) {
     // keep a short pre-roll so the first syllable is not clipped
-    while (audio.chunkSamples > SR * 0.4) audio.chunkSamples -= audio.chunks.shift().length;
+    while (ch.chunkSamples > SR * 0.4) ch.chunkSamples -= ch.chunks.shift().length;
   }
 }
 
-function flushChunk() {
-  const merged = new Float32Array(audio.chunkSamples);
+function flushChunk(ch) {
+  const merged = new Float32Array(ch.chunkSamples);
   let off = 0;
-  for (const c of audio.chunks) { merged.set(c, off); off += c.length; }
-  audio.chunks = []; audio.chunkSamples = 0; audio.hadSpeech = false;
+  for (const c of ch.chunks) { merged.set(c, off); off += c.length; }
+  ch.chunks = []; ch.chunkSamples = 0; ch.hadSpeech = false;
   if (!audio.ready || merged.length < SR * 0.6) return;
   audio.jobs++;
   renderTranscript();
-  audio.worker.postMessage({ type: 'transcribe', id: `t${Date.now()}`, audio: merged, language: settings.language || 'english' }, [merged.buffer]);
+  audio.worker.postMessage({ type: 'transcribe', id: `t${Date.now()}`, speaker: ch.speaker, audio: merged, language: settings.language || 'english' }, [merged.buffer]);
 }
 
+// A question opener must start a sentence (after an optional lead-in like "so" or
+// "great"), so "I would describe the tradeoffs" in the candidate's own answer does not count.
+const QUESTION_OPENERS = /^\W*(?:(?:so|and|okay|ok|great|alright|right|cool|yeah|um|uh|well|now),?\s+){0,2}(what|what's|why|how|when|where|which|who|tell me|talk me|walk me|describe|explain|can you|could you|would you|do you|did you|have you|are you|is there|give me|share)\b/i;
+function looksLikeQuestion(text) {
+  const words = text.split(/\s+/).filter(Boolean).length;
+  if (words < 5) return false;
+  if (/\?/.test(text)) return true;
+  // No question mark: look at the last two sentences only, so the candidate
+  // reading an earlier answer aloud does not re-trigger.
+  const sentences = text.split(/(?<=[.!?])\s+/).slice(-2);
+  return words >= 6 && sentences.some((sentence) => QUESTION_OPENERS.test(sentence));
+}
+
+// Auto-suggest fires only when the new speech looks like a question, after a
+// real pause, and never interrupts an answer that is still streaming. Plain
+// continued talking extends the transcript and leaves the answer on screen.
 function scheduleAutoAnswer() {
-  if (!settings.autoAnswer) return;
+  if (!autoSuggestOn()) return;
   clearTimeout(audio.pendingAnswer);
   audio.pendingAnswer = setTimeout(() => {
-    const text = transcriptText();
-    const fresh = text.slice(audio.answeredChars).trim();
-    if (fresh.split(/\s+/).filter(Boolean).length >= 4) askInterview({ force: false });
-  }, 900);
+    if (mode !== 'listen') return;
+    if (!looksLikeQuestion(freshText())) return;
+    if (current) { audio.pendingAfter = true; return; } // let the current answer finish first
+    if (Date.now() - (audio.lastAnswerAt || 0) < 3000) { audio.pendingAfter = true; setTimeout(scheduleAutoAnswer, 1500); return; }
+    askInterview({ force: false, keep: true });
+  }, 1400);
 }
 
-async function askInterview({ force = true } = {}) {
+async function askInterview({ force = true, keep = true } = {}) {
   const text = transcriptText();
   if (!text.trim()) return;
-  audio.answeredChars = text.length;
+  audio.answeredIndex = audio.segments.length;
   const tail = text.slice(-3500);
-  await ask('listen', [{ role: 'user', content: `Live transcript (oldest first, most recent last):\n"""\n${tail}\n"""\n\nWhat should I say next?` }], { force });
+  const note = labelled() ? ' Lines are labelled by speaker.' : '';
+  await ask('listen', [{ role: 'user', content: `Live transcript (oldest first, most recent last).${note}\n"""\n${tail}\n"""\n\nWhat should I say next?` }], { force, keep });
 }
 
 async function startListening() {
@@ -327,49 +472,131 @@ async function startListening() {
 
     audio.ctx = new AudioContext({ sampleRate: SR });
     await audio.ctx.audioWorklet.addModule('./pcm-worklet.js');
-    audio.node = new AudioWorkletNode(audio.ctx, 'pcm-capture', { numberOfOutputs: 1 });
-    audio.node.port.onmessage = (e) => onPcm(e.data);
-    const mute = audio.ctx.createGain(); mute.gain.value = 0;
-    audio.node.connect(mute).connect(audio.ctx.destination);
 
-    const mic = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: settings.micId ? { exact: settings.micId } : undefined,
-        echoCancellation: false, noiseSuppression: true, autoGainControl: true, channelCount: 1,
-      },
-    });
-    audio.streams.push(mic);
-    audio.ctx.createMediaStreamSource(mic).connect(audio.node);
+    await connectInputs();
 
     if (settings.systemAudio) {
       try {
         const sys = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
         sys.getVideoTracks().forEach((t) => t.stop());
-        if (sys.getAudioTracks().length) {
-          audio.streams.push(sys);
-          audio.ctx.createMediaStreamSource(new MediaStream(sys.getAudioTracks())).connect(audio.node);
-        }
+        if (sys.getAudioTracks().length) attachStream(new MediaStream(sys.getAudioTracks()), 'system audio', 'them');
       } catch (err) { console.warn('system audio unavailable', err); }
     }
-    audio.lastSpeech = performance.now();
-    setStatus('Loading speech model…');
+    show(el.vuWrap);
+    el.vuNote.textContent = 'Live. Speak: the bar should move.';
+    if (!audio.ready && !audio.download) setStatus('Loading speech model…');
+    else if (audio.inputNotice) setStatus(audio.inputNotice);
   } catch (err) {
     showError(err.message);
     await stopListening(true);
   }
 }
 
+// ---- input devices -------------------------------------------------------
+// Microphones are shared between apps on macOS, so Zoom holding the mic is not
+// a conflict. What does go wrong: the chosen device is unplugged or renamed,
+// another app has it exclusively (Windows), or a loopback device is selected
+// as the only input and the candidate's own voice vanishes. Each case falls
+// back to the system default and says so.
+async function openInput(deviceId, label) {
+  // Chromium's own cleanup: noise suppression, echo cancellation and automatic
+  // gain. Its echo canceller only references audio Halo itself plays (nothing),
+  // so it never strips the interviewer's voice coming out of your speakers.
+  const filters = settings.noiseSuppression !== false;
+  const constraints = (exact) => ({
+    audio: {
+      deviceId: exact && deviceId ? { exact: deviceId } : undefined,
+      echoCancellation: filters, noiseSuppression: filters, autoGainControl: filters, channelCount: 1,
+    },
+  });
+  try {
+    return { stream: await navigator.mediaDevices.getUserMedia(constraints(true)), fallback: false };
+  } catch (err) {
+    if (!deviceId) throw friendlyMicError(err, label);
+    console.warn(`${label} unavailable (${err.name}), falling back to default`, err);
+    try { return { stream: await navigator.mediaDevices.getUserMedia(constraints(false)), fallback: true, reason: err.name }; }
+    catch (err2) { throw friendlyMicError(err2, label); }
+  }
+}
+function friendlyMicError(err, label) {
+  const map = {
+    NotAllowedError: 'Microphone access was denied. Allow it in System Settings → Privacy & Security → Microphone.',
+    NotFoundError: `${label} was not found. Plug it in or choose another input in Settings → Audio.`,
+    NotReadableError: `${label} is busy in another app that holds it exclusively. Close that app or pick another input.`,
+    OverconstrainedError: `${label} is no longer available. Pick another input in Settings → Audio.`,
+  };
+  return new Error(map[err.name] || `Could not open ${label}: ${err.message}`);
+}
+function attachStream(stream, label, speaker) {
+  const ch = makeChannel(speaker);
+  ch.node = new AudioWorkletNode(audio.ctx, 'pcm-capture', { numberOfOutputs: 1 });
+  ch.node.port.onmessage = (e) => onPcm(ch, e.data);
+  const mute = audio.ctx.createGain(); mute.gain.value = 0; // keeps the worklet scheduled without playing anything
+  ch.node.connect(mute).connect(audio.ctx.destination);
+  audio.ctx.createMediaStreamSource(stream).connect(ch.node);
+  audio.channels.push(ch);
+  audio.streams.push(stream);
+  for (const track of stream.getAudioTracks()) track.addEventListener('ended', () => onInputLost(label));
+}
+function detachAll() {
+  for (const s of audio.streams) s.getTracks().forEach((t) => t.stop());
+  for (const ch of audio.channels) ch.node?.disconnect();
+  audio.streams = [];
+  audio.channels = [];
+}
+async function connectInputs() {
+  audio.inputNotice = '';
+  const primary = await openInput(settings.micId, 'Your microphone');
+  attachStream(primary.stream, 'microphone', 'you');
+  if (primary.fallback) audio.inputNotice = 'Chosen microphone unavailable, using the system default.';
+  if (settings.mic2Id && settings.mic2Id !== settings.micId) {
+    try {
+      const second = await openInput(settings.mic2Id, 'Second input');
+      if (second.fallback) audio.inputNotice = 'Second input unavailable; listening to your microphone only.';
+      else attachStream(second.stream, 'second input', 'them');
+      if (second.fallback) second.stream.getTracks().forEach((t) => t.stop());
+    } catch (err) { audio.inputNotice = err.message; }
+  }
+  if (audio.inputNotice && audio.ready) setStatus(audio.inputNotice);
+}
+async function onInputLost(label) {
+  if (mode !== 'listen' || audio.reconnecting) return;
+  audio.reconnecting = true;
+  setStatus(`${label} disconnected, reconnecting…`);
+  try {
+    detachAll();
+    await new Promise((r) => setTimeout(r, 600)); // let the OS settle after a hot-unplug
+    if (mode !== 'listen') return;
+    await connectInputs();
+    if (!audio.inputNotice) setStatus('Reconnected · listening');
+  } catch (err) {
+    showError(err.message);
+    await stopListening(true);
+  } finally { audio.reconnecting = false; }
+}
+navigator.mediaDevices.addEventListener('devicechange', () => populateMics());
+
+let vuPeak = 0;
+function updateVu(rms) {
+  // ~ -40 dBFS .. 0 dBFS mapped onto the bar, with a quick decay so speech reads as motion
+  const db = 20 * Math.log10(Math.max(rms, 1e-5));
+  const level = Math.max(0, Math.min(1, (db + 40) / 40));
+  vuPeak = Math.max(level, vuPeak * 0.85);
+  const w = `${Math.round(vuPeak * 100)}%`;
+  el.vu.style.width = w;
+  el.vuSettings.style.width = w;
+}
+
 async function stopListening(keepPanel = false) {
   clearTimeout(audio.pendingAnswer);
-  for (const s of audio.streams) s.getTracks().forEach((t) => t.stop());
-  audio.streams = [];
-  audio.node?.disconnect();
-  audio.node = null;
+  detachAll();
   if (audio.ctx) { try { await audio.ctx.close(); } catch { /* ignore */ } audio.ctx = null; }
-  audio.chunks = []; audio.chunkSamples = 0; audio.hadSpeech = false;
   el.listen.classList.remove('active');
   el.logo.classList.remove('listening');
   show(el.answerNow, false);
+  show(el.vuWrap, false);
+  el.vu.style.width = '0'; el.vuSettings.style.width = '0';
+  el.vuNote.textContent = 'Press Listen to see live levels here.';
   if (mode === 'listen') { mode = 'idle'; if (!keepPanel) setStatus('Stopped listening'); }
 }
 
@@ -388,6 +615,15 @@ function applyShortcutLabels() {
   el.hideBtn.title = `Hide (Esc). Bring back with ${accelLabel(s.toggle)}`;
   applyPanel();
 }
+function applyPreset() {
+  const preset = settings.preset === 'code' ? 'code' : 'talk';
+  $$('#preset button').forEach((b) => b.classList.toggle('active', b.dataset.preset === preset));
+  el.app.dataset.preset = preset;
+  el.askInput.placeholder = preset === 'code' ? 'Ask about the problem on screen…' : 'Ask about your screen…';
+  requestLayout();
+}
+const autoSuggestOn = () => Boolean(settings.autoAnswer) && settings.preset !== 'code';
+
 function applyProfileLabels() {
   const r = settings.resume;
   el.resumeStatus.textContent = r ? `${r.name} · ${fmtChars(r.text.length)}` : 'No resume yet.';
@@ -409,10 +645,13 @@ async function loadSettings() {
   el.context.value = settings.context || '';
   el.job.value = settings.job || '';
   el.whisperModel.value = settings.whisperModel;
+  el.themeMode.value = settings.themeMode || 'auto';
   el.autoAnswer.checked = Boolean(settings.autoAnswer);
   el.systemAudio.checked = Boolean(settings.systemAudio);
-  el.attach.checked = settings.attachScreen !== false;
   el.attachSetting.checked = settings.attachScreen !== false;
+  el.noise.checked = settings.noiseSuppression !== false;
+  el.keepFocus.checked = settings.keepFocus !== false;
+  applyPreset();
   el.keyStatus.textContent = settings.hasKey
     ? (settings.keyFromEnv ? `Using ANTHROPIC_API_KEY from your environment (${settings.keyHint}).` : `Saved (${settings.keyHint}), encrypted with your keychain.`)
     : 'No key yet.';
@@ -426,8 +665,11 @@ async function populateMics() {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const inputs = devices.filter((d) => d.kind === 'audioinput');
-    el.mic.innerHTML = '<option value="">System default</option>' + inputs.map((d) => `<option value="${escapeHtml(d.deviceId)}">${escapeHtml(d.label || 'Microphone')}</option>`).join('');
-    el.mic.value = settings.micId || '';
+    const opts = inputs.map((d) => `<option value="${escapeHtml(d.deviceId)}">${escapeHtml(d.label || 'Microphone')}</option>`).join('');
+    el.mic.innerHTML = '<option value="">System default</option>' + opts;
+    el.mic2.innerHTML = '<option value="">None</option>' + opts;
+    el.mic.value = inputs.some((d) => d.deviceId === settings.micId) ? settings.micId : '';
+    el.mic2.value = inputs.some((d) => d.deviceId === settings.mic2Id) ? settings.mic2Id : '';
   } catch { /* labels appear after mic permission */ }
 }
 async function save(patch) {
@@ -437,10 +679,24 @@ async function save(patch) {
 
 for (const [node, key, prop] of [
   [el.model, 'model', 'value'], [el.effort, 'effort', 'value'], [el.whisperModel, 'whisperModel', 'value'],
-  [el.mic, 'micId', 'value'], [el.autoAnswer, 'autoAnswer', 'checked'], [el.systemAudio, 'systemAudio', 'checked'],
+  [el.mic, 'micId', 'value'], [el.mic2, 'mic2Id', 'value'], [el.autoAnswer, 'autoAnswer', 'checked'], [el.systemAudio, 'systemAudio', 'checked'],
+  [el.themeMode, 'themeMode', 'value'], [el.keepFocus, 'keepFocus', 'checked'],
 ]) node.addEventListener('change', () => save({ [key]: node[prop] }));
-el.attach.addEventListener('change', () => { el.attachSetting.checked = el.attach.checked; save({ attachScreen: el.attach.checked }); });
-el.attachSetting.addEventListener('change', () => { el.attach.checked = el.attachSetting.checked; save({ attachScreen: el.attach.checked }); });
+el.preset.addEventListener('click', async (e) => {
+  const b = e.target.closest('button[data-preset]');
+  if (!b || b.dataset.preset === settings.preset) return;
+  settings = await halo.setPreset(b.dataset.preset);
+  applyPreset();
+  setStatus(settings.preset === 'code' ? 'Code: docked aside, answers code-first, auto-suggest off' : 'Talk: top of screen, spoken answers, auto-suggest on');
+});
+// Typing is the one thing that needs keyboard focus; hand it back when done.
+el.askInput.addEventListener('mousedown', () => { if (settings.keepFocus !== false) halo.focusInput(); });
+el.askInput.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); el.askInput.blur(); halo.releaseFocus(); } });
+// Changing inputs while listening re-opens them so the change is immediate.
+for (const node of [el.mic, el.mic2]) node.addEventListener('change', () => { if (mode === 'listen') onInputLost('input'); });
+el.mic2.addEventListener('change', () => { if (el.mic2.value && el.mic2.value === el.mic.value) { el.mic2.value = ''; save({ mic2Id: '' }); } });
+el.attachSetting.addEventListener('change', () => save({ attachScreen: el.attachSetting.checked }));
+el.noise.addEventListener('change', () => { save({ noiseSuppression: el.noise.checked }); if (mode === 'listen') onInputLost('input'); });
 const debounced = (fn, ms = 400) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 el.context.addEventListener('input', debounced(() => save({ context: el.context.value })));
 el.job.addEventListener('input', debounced(() => { save({ job: el.job.value }); el.jobStatus.textContent = ''; }));
@@ -466,6 +722,7 @@ el.removeResume.addEventListener('click', async () => { await save({ resume: nul
 
 // Shortcut recorder
 $$('.recorder').forEach((input) => {
+  input.addEventListener('mousedown', () => { if (settings.keepFocus !== false) halo.focusInput(); });
   input.addEventListener('focus', () => { input.value = 'Press keys…'; });
   input.addEventListener('blur', () => { input.value = accelLabel(settings.shortcuts?.[input.dataset.action]); });
   input.addEventListener('keydown', async (e) => {
@@ -493,9 +750,10 @@ async function saveKey() {
   show(el.hint, false);
   await populateMics();
 }
+for (const node of [el.apiKey, el.context, el.job]) node.addEventListener('mousedown', () => { if (settings.keepFocus !== false) halo.focusInput(); });
 el.saveKey.addEventListener('click', saveKey);
 el.apiKey.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); saveKey(); } });
-el.mic.addEventListener('focus', async () => { try { await halo.requestMic(); await populateMics(); } catch { /* ignore */ } });
+for (const node of [el.mic, el.mic2]) node.addEventListener('focus', async () => { try { await halo.requestMic(); await populateMics(); } catch { /* ignore */ } });
 
 // ---------------------------------------------------------------- wiring
 el.tabs.addEventListener('click', (e) => { const t = e.target.closest('.tab'); if (t) selectTab(t.dataset.tab); });
@@ -504,10 +762,12 @@ el.askForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const q = el.askInput.value.trim();
   el.askInput.value = '';
+  el.askInput.blur();
+  if (settings.keepFocus !== false) halo.releaseFocus();
   if (mode === 'listen' && q) {
     // In interview mode a typed question is answered with the transcript as context.
     const tail = transcriptText().slice(-3500);
-    ask('listen', [{ role: 'user', content: `Live transcript so far:\n"""\n${tail}\n"""\n\nThe candidate asks you directly: ${q}` }]);
+    ask('listen', [{ role: 'user', content: `Live transcript so far:\n"""\n${tail}\n"""\n\nThe candidate asks you directly: ${q}` }], { keep: true });
   } else runCapture(q);
 });
 el.listen.addEventListener('click', toggleListening);
@@ -523,7 +783,7 @@ el.copy.addEventListener('click', async () => {
 el.clear.addEventListener('click', async () => {
   if (current) await halo.abort(current.id);
   convo = [];
-  audio.segments = []; audio.answeredChars = 0;
+  audio.segments = []; audio.answeredIndex = 0; audio.pendingAfter = false; clearTimeout(audio.pendingAnswer);
   renderTranscript();
   if (mode === 'listen') el.answer.innerHTML = '<p class="empty">Transcript cleared. Still listening.</p>';
   else { el.answer.innerHTML = ''; mode = 'idle'; closePanel(); }
@@ -543,6 +803,8 @@ document.addEventListener('keydown', (e) => {
     else halo.hide();
   }
 });
+ipcDocked();
+function ipcDocked() { if (halo.onDocked) halo.onDocked((spot) => setStatus(`Moved to ${spot.replace('-', ' ')}`)); }
 halo.onHotkey(({ action }) => {
   if (action === 'capture') runCapture(el.askInput.value.trim());
   else if (action === 'listen') toggleListening();
