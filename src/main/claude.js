@@ -23,7 +23,8 @@ You are whispering to a candidate during a live interview. You receive a rolling
 - 2 to 6 sentences for behavioral or conceptual questions, or 3 to 5 crisp bullets if a list is clearer.
 - For technical or coding questions: one-sentence approach, then the key steps or code, then edge cases.
 - If the latest speech is not a question (small talk, the candidate mid-answer), give 1 to 3 short talking points to continue with.
-- Use the candidate's background below when it is relevant; never invent experience they do not have.`;
+- Use the candidate's background below when it is relevant; never invent experience they do not have.
+- Your earlier suggestions may come in <previous_suggestions>. If the interviewer is following up on one, build on it and stay consistent with it instead of repeating it; if they have moved on, ignore them.`;
 
 const CODE_PRESET = `
 
@@ -69,7 +70,9 @@ async function streamAnswer({ apiKey, model, effort, mode, profile, messages, si
   const params = {
     model,
     max_tokens: 4096, // overlay answers are deliberately short
-    system: buildSystem(mode, profile),
+    // The system prompt (with the resume and job description) is identical across
+    // calls in a mode, so cache it: later suggestions skip re-reading the profile.
+    system: [{ type: 'text', text: buildSystem(mode, profile), cache_control: { type: 'ephemeral' } }],
     messages,
   };
   if (!isHaiku) {

@@ -57,13 +57,14 @@ halo.onBackdrop((lum) => {
 });
 
 const DEFAULT_CAPTURE_PROMPT = 'Here is my screen. Figure out what I most likely need help with and handle it.';
+const FOLLOWUP_CAPTURE_PROMPT = 'Here is my current screen.';
 const HALLUCINATIONS = /^(thank you\.?|thanks for watching\.?|you\.?|bye\.?|\.+|\[.*\]|\(.*\))$/i;
 const ACTION_NAMES = { selectArea: 'Select capture area', toggle: 'Show / hide', capture: 'Capture', listen: 'Listen', collapse: 'Collapse', dock: 'Move to corner' };
 
 let settings = {};
 let mode = 'idle';            // 'idle' | 'capture' | 'listen'
-let convo = [];               // Anthropic message params for capture mode
-let current = null;           // { id, text, mode }
+let convo = [];               // Anthropic message params for capture mode: answered turns only
+let current = null;           // { id, text, mode, turn? } — turn is the capture user turn awaiting its answer
 let reqCounter = 0;
 let panelOpen = false;        // there is something to show
 let collapsed = false;        // user folded the panel down to the bar
@@ -109,12 +110,33 @@ function renderAnswer(streaming = false) {
   requestAnimationFrame(() => {
     renderQueued = false;
     const text = current?.text || '';
-    el.answer.innerHTML = text ? marked.parse(text) : '<p class="empty">…</p>';
-    if (streaming) el.answer.lastElementChild?.classList.add('cursor');
+    const target = el.answer.querySelector('.turn-a.live') || el.answer;
+    target.innerHTML = text ? marked.parse(text) : '<p class="empty">…</p>';
+    if (streaming) target.lastElementChild?.classList.add('cursor');
     el.answer.scrollTop = el.answer.scrollHeight;
   });
 }
 function showError(message) { el.answer.innerHTML = `<p class="error">${escapeHtml(message)}</p>`; }
+
+// The capture conversation renders as a thread: each question (tagged when it
+// carried a screenshot) above its answer, so a follow-up never wipes earlier turns.
+function turnHtml(m) {
+  if (m.role === 'assistant') return `<div class="turn-a">${marked.parse(m.content)}</div>`;
+  const blocks = Array.isArray(m.content) ? m.content : [{ type: 'text', text: m.content }];
+  const shot = blocks.some((b) => b.type === 'image' || b.text === '[earlier screenshot omitted]');
+  const text = blocks.filter((b) => b.type === 'text' && b.text !== '[earlier screenshot omitted]').map((b) => b.text).join(' ');
+  const question = text === DEFAULT_CAPTURE_PROMPT || text === FOLLOWUP_CAPTURE_PROMPT ? '' : text;
+  return `<div class="turn-q">${shot ? '<span class="shot-tag">Screen</span>' : ''}<span>${escapeHtml(question || 'What is on my screen?')}</span></div>`;
+}
+function renderThread(tail = '') {
+  el.answer.innerHTML = convo.map(turnHtml).join('') + tail;
+  el.answer.scrollTop = el.answer.scrollHeight;
+}
+/** Settles an unfinished capture: a partial answer is kept with its question, an unanswered question is dropped. */
+function settleCapture(req) {
+  if (!req.turn || !req.text || req.rev !== captureRevision) return;
+  convo = trimOldScreenshots([...convo, req.turn, { role: 'assistant', content: `${req.text}\n\n*(stopped)*` }]);
+}
 
 // ---------------------------------------------------------------- pills
 // Segmented controls (Talk|Code, the settings tabs) share one raised pill that
@@ -268,21 +290,28 @@ halo.onClaude((ev) => {
   }
   if (ev.type === 'done') {
     finished.text = ev.text || finished.text;
-    el.answer.innerHTML = finished.text ? marked.parse(finished.text) : '<p class="empty">No answer.</p>';
-    if (finished.mode === 'capture') convo.push({ role: 'assistant', content: finished.text });
-    const usage = ev.usage ? ` · ${ev.usage.input_tokens + ev.usage.output_tokens} tok` : '';
+    if (finished.turn) {
+      // Capture area or margins changed mid-answer: the screenshot may show newly excluded content, so don't keep it.
+      if (finished.rev === captureRevision) convo = trimOldScreenshots([...convo, finished.turn, { role: 'assistant', content: finished.text || 'No answer.' }]);
+      renderThread(finished.rev === captureRevision ? '' : `${turnHtml(finished.turn)}<div class="turn-a">${marked.parse(finished.text || 'No answer.')}</div>`);
+    } else el.answer.innerHTML = finished.text ? marked.parse(finished.text) : '<p class="empty">No answer.</p>';
+    const u = ev.usage;
+    const cached = u?.cache_read_input_tokens || 0;
+    const usage = u ? ` · ${u.input_tokens + cached + (u.cache_creation_input_tokens || 0) + u.output_tokens} tok${cached ? ` (${cached} cached)` : ''}` : '';
     setStatus(`${ev.model || settings.model}${usage}${finished.mode === 'listen' ? ' · listening' : ''}`);
     if (collapsed) el.collapse.classList.add('unread');
     if (finished.mode === 'listen') {
       audio.lastAnswerAt = Date.now();
+      if (finished.text) audio.suggestions = [...audio.suggestions, finished.text.slice(0, 1500)].slice(-2);
       if (audio.pendingAfter) { audio.pendingAfter = false; scheduleAutoAnswer(); }
     }
   } else if (ev.type === 'aborted') {
-    if (finished.mode === 'capture') convo.pop();
-    el.answer.innerHTML = finished.text ? marked.parse(finished.text) : '<p class="empty">Cancelled.</p>';
+    if (finished.turn) { settleCapture(finished); renderThread(finished.text ? '' : '<p class="empty">Cancelled.</p>'); }
+    else el.answer.innerHTML = finished.text ? marked.parse(finished.text) : '<p class="empty">Cancelled.</p>';
   } else {
-    if (finished.mode === 'capture') convo.pop();
-    showError(ev.message || 'Something went wrong.');
+    // A failed capture leaves the conversation as it was; the question can simply be asked again.
+    if (finished.turn) renderThread(`<p class="error">${escapeHtml(ev.message || 'Something went wrong.')}</p>`);
+    else showError(ev.message || 'Something went wrong.');
     setStatus('');
   }
 });
@@ -291,12 +320,13 @@ halo.onClaude((ev) => {
  * Streams one answer. With `keep`, the answer currently on screen stays visible
  * (dimmed) until the new one starts streaming, so the panel never blanks.
  */
-async function ask(reqMode, messages, { force = true, keep = false } = {}) {
+async function ask(reqMode, messages, { force = true, keep = false, turn = null } = {}) {
   if (current) await halo.abort(current.id);
   const id = `r${++reqCounter}`;
-  current = { id, text: '', mode: reqMode, keep: keep && el.answer.textContent.trim().length > 0, started: false };
+  current = { id, text: '', mode: reqMode, keep: keep && el.answer.textContent.trim().length > 0, started: false, turn, rev: captureRevision };
   openPanel({ force });
-  if (current.keep) el.answer.classList.add('stale');
+  if (turn) renderThread(`${turnHtml(turn)}<div class="turn-a live"><div class="skeleton"><i></i><i></i><i></i><small>Reading your screen</small></div></div>`);
+  else if (current.keep) el.answer.classList.add('stale');
   else el.answer.innerHTML = `<div class="skeleton"><i></i><i></i><i></i><small>${reqMode === 'listen' ? 'Drafting what to say' : 'Reading your screen'}</small></div>`;
   el.app.classList.add('thinking');
   show(el.stop);
@@ -342,10 +372,24 @@ function previewScreenshot(shot) {
   setStatus('Review screenshot before sending');
   return new Promise(resolve => { previewResolve = resolve; });
 }
-async function runCapture(question = '') {
+/**
+ * Asks about the screen. `screen: true` (the Capture button and hotkey) always
+ * attaches a fresh screenshot; a typed follow-up follows the attachScreen setting.
+ */
+async function runCapture(question = '', { screen = false } = {}) {
   if (previewResolve || selectingArea) return;
   if (!settings.hasKey) return openSettings('account', 'Paste your Anthropic API key to get started.');
   if (mode === 'listen') await stopListening();
+  if (current?.turn) {
+    // A new capture supersedes one still streaming: keep what it said so far, then stop it.
+    const prev = current;
+    current = null;
+    settleCapture(prev);
+    await halo.abort(prev.id);
+    el.app.classList.remove('thinking');
+    show(el.stop, false);
+    renderThread();
+  }
   mode = 'capture';
   openPanel({ force: true });
   show(el.transcript, false);
@@ -354,7 +398,7 @@ async function runCapture(question = '') {
 
   const revision = captureRevision;
   let shot = null;
-  const wantShot = settings.attachScreen !== false || convo.length === 0;
+  const wantShot = screen || settings.attachScreen !== false || convo.length === 0;
   if (wantShot) {
     setStatus('Capturing screen…');
     try { shot = await halo.capture(); }
@@ -381,10 +425,10 @@ async function runCapture(question = '') {
   }
   const content = [];
   if (shot) content.push({ type: 'image', source: { type: 'base64', media_type: shot.mediaType, data: shot.data } });
-  content.push({ type: 'text', text: question || (convo.length ? 'Here is my current screen.' : DEFAULT_CAPTURE_PROMPT) });
-  convo.push({ role: 'user', content });
-  convo = trimOldScreenshots(convo);
-  await ask('capture', convo);
+  content.push({ type: 'text', text: question || (convo.length ? FOLLOWUP_CAPTURE_PROMPT : DEFAULT_CAPTURE_PROMPT) });
+  // The turn joins `convo` only once answered, so a cancelled or failed request never leaves a dangling question.
+  const turn = { role: 'user', content };
+  await ask('capture', trimOldScreenshots([...convo, turn]), { turn });
 }
 
 // ---------------------------------------------------------------- listening
@@ -394,6 +438,7 @@ async function runCapture(question = '') {
 const audio = {
   ctx: null, channels: [], streams: [], worker: null, ready: false, reconnecting: false, jobs: 0,
   segments: [], answeredIndex: 0, pendingAnswer: null, pendingAfter: false, lastAnswerAt: 0,
+  suggestions: [], // the last two finished suggestions, so Claude can build on them instead of repeating
 };
 const SR = 16000;
 const SPEAKER_NAME = { you: 'You', them: 'Interviewer' };
@@ -541,13 +586,20 @@ function scheduleAutoAnswer() {
   }, 1400);
 }
 
-async function askInterview({ force = true, keep = true } = {}) {
-  const text = transcriptText();
-  if (!text.trim()) return;
-  audio.answeredIndex = audio.segments.length;
-  const tail = text.slice(-3500);
+/** One listen-mode user turn: earlier suggestions, the transcript tail, then the request. */
+function interviewMessages(request) {
+  const prev = audio.suggestions.length
+    ? `<previous_suggestions>\n${audio.suggestions.map((s) => `<suggestion>\n${s}\n</suggestion>`).join('\n')}\n</previous_suggestions>\n\n`
+    : '';
   const note = labelled() ? ' Lines are labelled by speaker.' : '';
-  await ask('listen', [{ role: 'user', content: `Live transcript (oldest first, most recent last).${note}\n"""\n${tail}\n"""\n\nWhat should I say next?` }], { force, keep });
+  const tail = transcriptText().slice(-3500);
+  return [{ role: 'user', content: `${prev}Live transcript (oldest first, most recent last).${note}\n"""\n${tail}\n"""\n\n${request}` }];
+}
+
+async function askInterview({ force = true, keep = true } = {}) {
+  if (!transcriptText().trim()) return;
+  audio.answeredIndex = audio.segments.length;
+  await ask('listen', interviewMessages('What should I say next?'), { force, keep });
 }
 
 async function startListening() {
@@ -903,7 +955,7 @@ for (const node of [el.mic, el.mic2]) node.addEventListener('focus', async () =>
 
 // ---------------------------------------------------------------- wiring
 el.tabs.addEventListener('click', (e) => { const t = e.target.closest('.tab'); if (t) selectTab(t.dataset.tab); });
-el.capture.addEventListener('click', () => runCapture(el.askInput.value.trim()).then(() => { el.askInput.value = ''; }));
+el.capture.addEventListener('click', () => runCapture(el.askInput.value.trim(), { screen: true }).then(() => { el.askInput.value = ''; }));
 el.askForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const q = el.askInput.value.trim();
@@ -912,8 +964,7 @@ el.askForm.addEventListener('submit', (e) => {
   if (settings.keepFocus !== false) halo.releaseFocus();
   if (mode === 'listen' && q) {
     // In interview mode a typed question is answered with the transcript as context.
-    const tail = transcriptText().slice(-3500);
-    ask('listen', [{ role: 'user', content: `Live transcript so far:\n"""\n${tail}\n"""\n\nThe candidate asks you directly: ${q}` }], { keep: true });
+    ask('listen', interviewMessages(`The candidate asks you directly: ${q}`), { keep: true });
   } else runCapture(q);
 });
 el.listen.addEventListener('click', toggleListening);
@@ -921,16 +972,20 @@ el.answerNow.addEventListener('click', () => askInterview());
 el.stop.addEventListener('click', () => current && halo.abort(current.id));
 el.collapse.addEventListener('click', toggleCollapse);
 el.copy.addEventListener('click', async () => {
-  const text = el.answer.innerText.trim();
+  const text = ([...el.answer.querySelectorAll('.turn-a')].pop() || el.answer).innerText.trim();
   if (!text) return;
   await navigator.clipboard.writeText(text);
   const old = el.copy.textContent; el.copy.textContent = 'Copied'; setTimeout(() => { el.copy.textContent = old; }, 1200);
 });
 el.clear.addEventListener('click', async () => {
   finishPreview(false);
-  if (current) await halo.abort(current.id);
+  const req = current;
+  current = null; // ignore its late 'aborted' event, which would otherwise settle a turn back into the cleared conversation
+  if (req) await halo.abort(req.id);
+  el.app.classList.remove('thinking');
+  show(el.stop, false);
   convo = [];
-  audio.segments = []; audio.answeredIndex = 0; audio.pendingAfter = false; clearTimeout(audio.pendingAnswer);
+  audio.segments = []; audio.answeredIndex = 0; audio.suggestions = []; audio.pendingAfter = false; clearTimeout(audio.pendingAnswer);
   renderTranscript();
   if (mode === 'listen') el.answer.innerHTML = '<p class="empty">Transcript cleared. Still listening.</p>';
   else { el.answer.innerHTML = ''; mode = 'idle'; closePanel(); }
@@ -954,7 +1009,7 @@ document.addEventListener('keydown', (e) => {
 halo.onDocked((spot) => setStatus(`Moved to ${spot.replace('-', ' ')}`));
 halo.onHotkey(({ action }) => {
   if (action === 'selectArea') selectArea();
-  else if (action === 'capture') runCapture(el.askInput.value.trim());
+  else if (action === 'capture') runCapture(el.askInput.value.trim(), { screen: true });
   else if (action === 'listen') toggleListening();
   else if (action === 'collapse') toggleCollapse();
   else if (action === 'settings') openSettings();

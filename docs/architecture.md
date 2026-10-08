@@ -47,7 +47,7 @@ The overlay is never in the screenshot: content protection excludes it from `des
 3. Worker results become transcript segments. Common Whisper hallucinations on near-silence ("Thank you.") are filtered.
 4. With auto-suggest on, 1.4 s after a new segment, `looksLikeQuestion()` checks the fresh transcript since the last answer: a question mark, or a question opener ("tell me", "how would", "walk me through") in the last two sentences, with at least five new words. Only then does the rolling transcript (last 3500 chars) go to Claude with the interview system prompt and `effort: low`. Continued talking that is not a question leaves the current answer alone. An in-flight answer is never aborted by new speech; the follow-up waits for it to finish, with a 3 s cooldown.
 5. A new suggestion is non-destructive: `ask(..., { keep: true })` dims the current answer and swaps it only when the first token of the new one arrives. If the request fails before that, the old answer stays untouched.
-6. "Answer now" and typed questions in the bar use the same transcript as context.
+6. "Answer now" and typed questions in the bar use the same transcript as context, and every listen request also carries the last two finished suggestions in `<previous_suggestions>` so Claude builds on a follow-up instead of repeating itself. The system prompt is sent with `cache_control`, so the profile is read from cache on every call after the first in a 5-minute window.
 7. The system prompt carries the profile from Settings → Profile as `<resume>`, `<job_description>` and `<notes>` blocks inside `<candidate_background>`. Documents are parsed locally in `documents.js` (pdf-parse for PDF, mammoth for DOCX) and capped at 40k characters.
 
 ## Audio inputs
