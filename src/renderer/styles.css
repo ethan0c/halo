@@ -255,7 +255,7 @@ button { cursor: pointer; border: 0; background: none; padding: 0; }
 .answer .turn-q { display: flex; align-items: baseline; gap: 6px; margin: 0 0 6px; font-size: 12px; color: var(--text-2); }
 .answer .turn-a + .turn-q, .answer .turn-a + .error { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--edge-soft); }
 .answer .turn-a > :last-child { margin-bottom: 0; }
-.answer .shot-tag { flex: none; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); background: var(--fill-2); padding: 1px 6px; border-radius: 999px; }
+.answer .shot-tag { flex: none; font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); background: var(--fill-2); padding: 1px 6px; border-radius: 999px; }
 .answer .cursor::after { content: '▍'; color: var(--text-2); animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
