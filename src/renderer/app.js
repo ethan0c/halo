@@ -324,6 +324,7 @@ function trimOldScreenshots(messages) {
 
 let previewResolve = null;
 let selectingArea = false;
+let captureRevision = 0;
 function finishPreview(send) {
   if (!previewResolve) return;
   const resolve = previewResolve;
@@ -351,6 +352,7 @@ async function runCapture(question = '') {
   show(el.answerNow, false);
   el.capture.classList.add('busy');
 
+  const revision = captureRevision;
   let shot = null;
   const wantShot = settings.attachScreen !== false || convo.length === 0;
   if (wantShot) {
@@ -363,9 +365,18 @@ async function runCapture(question = '') {
       return; // Never reuse a previous image if the selected display / crop failed.
     }
   }
+  if (revision !== captureRevision) {
+    el.capture.classList.remove('busy');
+    setStatus('Capture area changed; capture again');
+    return;
+  }
   if (shot && settings.previewCapture && !await previewScreenshot(shot)) {
     el.capture.classList.remove('busy');
     setStatus('Capture cancelled');
+    return;
+  }
+  if (revision !== captureRevision) {
+    el.capture.classList.remove('busy');
     return;
   }
   const content = [];
@@ -800,6 +811,7 @@ async function selectArea() {
   if (selectingArea) return;
   finishPreview(false);
   selectingArea = true;
+  captureRevision++;
   try {
     settings = await halo.selectCaptureArea();
     convo = [];
@@ -809,6 +821,7 @@ async function selectArea() {
 }
 $('#select-capture-area').addEventListener('click', selectArea);
 $('#clear-capture-area').addEventListener('click', async () => {
+  captureRevision++;
   finishPreview(false);
   await save({ captureArea: null });
   convo = [];
@@ -822,6 +835,8 @@ for (const edge of ['top', 'bottom', 'left', 'right']) {
   input.addEventListener('change', async () => {
     if (!input.reportValidity() || input.value === '') return;
     const key = `capture${edge[0].toUpperCase()}${edge.slice(1)}`;
+    captureRevision++;
+    finishPreview(false);
     await save({ [key]: input.valueAsNumber });
     // A follow-up must not reuse images containing newly excluded areas.
     convo = [];

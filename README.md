@@ -71,6 +71,8 @@ A typed question always comes with a fresh screenshot; Settings → General can 
 - `src/main/documents.js`: local text extraction for resumes and job descriptions (`pdf-parse`, `mammoth`).
 - `scripts/make-icons.mjs`: renders the logo to PNG for the menu bar and app icon, no image library needed.
 
+Capture checks: `node --test scripts/test-capture.cjs` verifies region geometry, display selection, crop-before-encoding, unavailable displays, reverse dragging, and cancellation.
+
 Useful scripts: `npm run dev` (overlay visible to screen capture, for screenshots), `npm run smoke` (headless load check), `npm run dist` (build `Halo.app`).
 
 ## Notes
