@@ -216,7 +216,7 @@ function createWindow() {
             document.querySelector('#app').style.width = '${preset === 'code' ? WIDTHS.code : WIDTHS.talk}px';
             document.querySelector('#settings').classList.add('hidden');
             document.querySelector('#panel').classList.remove('hidden');
-            document.querySelector('#answer').innerHTML = '<p><strong>Answer:</strong> use a hash map for O(n) lookups.</p><pre><code>const seen = new Map();</code></pre>';
+            document.querySelector('#answer').innerHTML = '<div class="turn-q"><span class="shot-tag">Screen</span><span>What is on my screen?</span></div><div class="turn-a"><p><strong>Answer:</strong> use a hash map for O(n) lookups.</p></div><div class="turn-q"><span class="shot-tag">Screen</span><span>What about the follow-up part?</span></div><div class="turn-a"><pre><code>const seen = new Map();</code></pre></div>';
             document.querySelector('#status').textContent = 'claude-opus-5-5 · 812 tok';
           `);
           await new Promise((r) => setTimeout(r, 500));
