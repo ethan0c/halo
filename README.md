@@ -14,6 +14,14 @@ A quiet AI copilot that floats over your screen and is invisible to screen recor
 - **Always readable** — in Auto appearance Halo samples the screen behind the pill every 2 seconds. Over bright content it uses dark glass with white text, and over dark content it uses light glass with dark text. A hairline outline keeps it visible on busy, mid-tone backgrounds.
 - **Floats everywhere** — always on top, on every Space, over full-screen apps, hidden from Mission Control, no Dock icon. Lives in the menu bar.
 
+## What it looks like
+
+Dark glass over a bright page, light glass over a dark one, and the narrower icon-only Code preset. Rendered by `HALO_SHOT=docs/screenshots npm run smoke`.
+
+| Talk · over white | Talk · over black | Code · over white |
+|---|---|---|
+| ![Talk preset, dark glass](docs/screenshots/halo-talk-dark-ffffff.png) | ![Talk preset, light glass](docs/screenshots/halo-talk-light-0b0b0d.png) | ![Code preset](docs/screenshots/halo-code-dark-ffffff.png) |
+
 ## Run it
 
 ```bash
