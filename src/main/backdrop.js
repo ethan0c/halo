@@ -2,10 +2,7 @@
 // screen behind the overlay. The overlay itself is content-protected, so it
 // never shows up in its own sample.
 
-/**
- * Mean perceived luminance (0..1) of a rectangle inside a BGRA bitmap.
- * Pure function so it can be unit-tested without Electron.
- */
+/** Mean perceived luminance (0..1) of a rectangle inside a BGRA bitmap. */
 function luminanceOfBitmap(bitmap, width, height, rect) {
   const x0 = Math.max(0, Math.floor(rect.x));
   const y0 = Math.max(0, Math.floor(rect.y));

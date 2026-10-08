@@ -12,7 +12,6 @@ contextBridge.exposeInMainWorld('halo', {
   openExternal: (url) => ipcRenderer.invoke('shell:open', url),
   resize: (height) => ipcRenderer.send('window:resize', height),
   setPreset: (preset) => ipcRenderer.invoke('window:preset', preset),
-  dock: () => ipcRenderer.invoke('window:dock'),
   focusInput: () => ipcRenderer.send('window:focus-input'),
   releaseFocus: () => ipcRenderer.send('window:release-focus'),
   hide: () => ipcRenderer.send('window:hide'),

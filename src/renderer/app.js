@@ -19,7 +19,7 @@ const el = {
   uploadResume: $('#btn-upload-resume'), resumeStatus: $('#resume-status'), removeResume: $('#btn-remove-resume'),
   job: $('#job'), uploadJob: $('#btn-upload-job'), jobStatus: $('#job-status'), context: $('#context'),
   mic: $('#mic'), mic2: $('#mic2'), whisperModel: $('#whisper-model'), systemAudio: $('#system-audio'), systemAudioLabel: $('#system-audio-label'),
-  themeMode: $('#theme-mode'), themeNote: $('#theme-note'), vu: $('#vu'), vuWrap: $('#vu-wrap'), vuSettings: $('#vu-settings'), vuNote: $('#vu-note'),
+  themeMode: $('#theme-mode'), vu: $('#vu'), vuWrap: $('#vu-wrap'), vuSettings: $('#vu-settings'), vuNote: $('#vu-note'),
   resetShortcuts: $('#btn-reset-shortcuts'), shortcutError: $('#shortcut-error'),
   apiKey: $('#api-key'), saveKey: $('#btn-save-key'), keyStatus: $('#key-status'), quit: $('#btn-quit'),
 };
@@ -61,7 +61,7 @@ const HALLUCINATIONS = /^(thank you\.?|thanks for watching\.?|you\.?|bye\.?|\.+|
 const ACTION_NAMES = { toggle: 'Show / hide', capture: 'Capture', listen: 'Listen', collapse: 'Collapse', dock: 'Move to corner' };
 
 let settings = {};
-let mode = 'idle';            // 'capture' | 'listen'
+let mode = 'idle';            // 'idle' | 'capture' | 'listen'
 let convo = [];               // Anthropic message params for capture mode
 let current = null;           // { id, text, mode }
 let reqCounter = 0;
@@ -70,7 +70,7 @@ let collapsed = false;        // user folded the panel down to the bar
 
 // ---------------------------------------------------------------- helpers
 const setStatus = (text) => { el.status.textContent = text || ''; };
-const show = (node, on = true) => node.classList.toggle('hidden', !on);
+const show = (node, on = true) => (node.classList.contains('panel') ? revealPanel(node, on) : node.classList.toggle('hidden', !on));
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmtChars = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)) + ' chars';
 
@@ -116,7 +116,60 @@ function renderAnswer(streaming = false) {
 }
 function showError(message) { el.answer.innerHTML = `<p class="error">${escapeHtml(message)}</p>`; }
 
+// ---------------------------------------------------------------- pills
+// Segmented controls (Talk|Code, the settings tabs) share one raised pill that
+// glides to the active button instead of each button lighting up in place.
+const PILL_HOSTS = ['#preset', '#tabs'];
+function placePills() {
+  for (const sel of PILL_HOSTS) {
+    const host = document.querySelector(sel);
+    const on = host?.querySelector('button.active');
+    if (!on || !host.offsetParent) continue; // hidden: measured again when shown
+    let pill = host.querySelector('.pill');
+    if (!pill) { pill = document.createElement('i'); pill.className = 'pill'; host.prepend(pill); }
+    Object.assign(pill.style, { left: `${on.offsetLeft}px`, top: `${on.offsetTop}px`, width: `${on.offsetWidth}px`, height: `${on.offsetHeight}px` });
+    // The first placement lands instantly; only moves after that glide.
+    if (!pill.classList.contains('settled')) requestAnimationFrame(() => pill.classList.add('settled'));
+  }
+}
+/** Un-hides a node with a short settle-in (opacity + lift, see .entering). */
+function settle(node) {
+  node.classList.remove('hidden');
+  node.classList.add('entering');
+  void node.offsetHeight; // commit the start state so the transition runs
+  node.classList.remove('entering');
+}
+
 // ---------------------------------------------------------------- panels
+// Panels settle in and fade out (.entering/.leaving in styles.css) and the next
+// window resize animates with them. A panel replacing another swaps instantly
+// so the window changes size once instead of bouncing.
+const LEAVE_MS = 120;
+let animateNextLayout = false;
+function revealPanel(node, on) {
+  const hidden = node.classList.contains('hidden');
+  if (on) {
+    clearTimeout(node._leave);
+    node.classList.remove('leaving');
+    if (!hidden) return;
+    $$('.panel.leaving').forEach(finishLeave);
+    settle(node);
+    placePills();
+    animateNextLayout = true;
+  } else {
+    if (hidden || node.classList.contains('leaving')) return;
+    if ($$('.panel:not(.hidden):not(.leaving)').some((p) => p !== node)) { finishLeave(node); return; }
+    node.classList.add('leaving');
+    node._leave = setTimeout(() => finishLeave(node), LEAVE_MS);
+  }
+}
+function finishLeave(node) {
+  clearTimeout(node._leave);
+  node.classList.remove('leaving');
+  node.classList.add('hidden');
+  animateNextLayout = true;
+}
+
 function applyPanel() {
   show(el.panel, panelOpen && !collapsed);
   show(el.collapse, panelOpen);
@@ -150,7 +203,12 @@ function openSettings(tab, hint) {
 function closeSettings() { show(el.settings, false); applyPanel(); }
 function selectTab(name) {
   $$('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
-  $$('.tab-page').forEach((p) => show(p, p.dataset.page === name));
+  $$('.tab-page').forEach((p) => {
+    if (p.dataset.page !== name) p.classList.add('hidden');
+    else if (p.classList.contains('hidden')) settle(p);
+  });
+  placePills();
+  animateNextLayout = true;
 }
 
 // ---------------------------------------------------------------- layout
@@ -177,7 +235,10 @@ function requestLayout() {
   layoutQueued = true;
   requestAnimationFrame(() => {
     layoutQueued = false;
-    halo.resize({ height: el.app.getBoundingClientRect().height, width: neededWidth() });
+    const animate = animateNextLayout;
+    animateNextLayout = false;
+    placePills(); // button widths can change with fonts, labels and preset
+    halo.resize({ height: el.app.getBoundingClientRect().height, width: neededWidth(), animate });
   });
 }
 new ResizeObserver(requestLayout).observe(el.app);
@@ -618,6 +679,7 @@ function applyShortcutLabels() {
 function applyPreset() {
   const preset = settings.preset === 'code' ? 'code' : 'talk';
   $$('#preset button').forEach((b) => b.classList.toggle('active', b.dataset.preset === preset));
+  placePills();
   el.app.dataset.preset = preset;
   el.askInput.placeholder = preset === 'code' ? 'Ask about the problem on screen…' : 'Ask about your screen…';
   requestLayout();
@@ -803,8 +865,7 @@ document.addEventListener('keydown', (e) => {
     else halo.hide();
   }
 });
-ipcDocked();
-function ipcDocked() { if (halo.onDocked) halo.onDocked((spot) => setStatus(`Moved to ${spot.replace('-', ' ')}`)); }
+halo.onDocked((spot) => setStatus(`Moved to ${spot.replace('-', ' ')}`));
 halo.onHotkey(({ action }) => {
   if (action === 'capture') runCapture(el.askInput.value.trim());
   else if (action === 'listen') toggleListening();

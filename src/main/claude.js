@@ -74,7 +74,6 @@ async function streamAnswer({ apiKey, model, effort, mode, profile, messages, si
   };
   if (!isHaiku) {
     params.output_config = { effort: mode === 'listen' ? 'low' : effort || 'medium' };
-    // Adaptive thinking is the default on the 5.5 family; nothing to set.
   }
   if (/claude-(opus|sonnet)-5-5|fable/i.test(model)) {
     // Server-side fallbacks: if a safety classifier declines, Anthropic

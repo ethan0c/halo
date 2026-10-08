@@ -40,8 +40,7 @@ Answers are capped at 4096 output tokens on purpose; the overlay is for quick he
 
 ## Interview mode
 
-- **`Error: net::ERR_FILE_NOT_FOUND` in the terminal when pressing Listen.** The renderer asked for a file that is not in `dist/`. Halo now logs which path it was and answers 404 instead of throwing. The usual cause is an ONNX Runtime wasm variant missing from `dist/ort/`; `npm run build` copies every variant, so rebuild.
-- **Download progress jumps around or restarts.** Fixed: progress is now aggregated across all model files. If you see a single file bouncing, you are on an old build.
+- **`Error: net::ERR_FILE_NOT_FOUND` in the terminal when pressing Listen.** The renderer asked for a file that is not in `dist/`. Halo logs which path it was and answers 404. The usual cause is an ONNX Runtime wasm variant missing from `dist/ort/`; `npm run build` copies every variant, so rebuild.
 - **Speech model never finishes downloading.** It is fetched from Hugging Face on first use (tiny ≈ 80 MB, base ≈ 150 MB, small ≈ 500 MB). Check the connection, then press Listen again; downloads resume from cache.
 - **Zoom or Meet is using my mic. Is that a conflict?** No. macOS lets several apps read the same microphone. If a device is held exclusively (some Windows drivers) or unplugged, Halo falls back to the system default and says so in the status line.
 - **My headset was unplugged mid-interview.** Halo reconnects on its own and keeps the transcript. If the device you picked is gone, it uses the default until you choose again.
@@ -51,7 +50,6 @@ Answers are capped at 4096 output tokens on purpose; the overlay is for quick he
 - **Transcript is empty while people are talking.** Open Settings and pick the right input. If the interviewer is on headphones, the mic cannot hear them: either use speakers or install a loopback driver such as BlackHole, create a Multi-Output Device in Audio MIDI Setup that includes BlackHole and your headphones, and select BlackHole as Halo's input. Direct system-audio capture is only supported by Electron on Windows.
 - **Transcript is garbled.** Switch to Whisper small, or raise the model from tiny. Background noise raises the adaptive noise floor; a quieter room helps.
 - **Suggestions come too often or too late.** Auto-suggest only fires when the new speech looks like a question (a question mark, or an opener such as "tell me" or "how would"), about 1.4 s after you stop talking. Plain conversation leaves the current answer on screen. Press "Answer now" for a suggestion on demand, or turn auto-suggest off.
-- **The answer vanished while I was still reading it.** That was the old behaviour. A new suggestion now dims the current answer and replaces it only once the new text starts streaming.
 - **It transcribes "Thank you." out of nothing.** A known Whisper quirk on silence; the common ones are filtered. Lower your mic gain if it persists.
 
 ## Profile documents

@@ -17,10 +17,17 @@ const DOCK_SPOTS = ['top-center', 'top-right', 'bottom-right', 'bottom-left', 't
 const PRESET_DOCK = { talk: 'top-center', code: 'top-right' };
 const MIN_HEIGHT = 60;
 const MAX_HEIGHT = 820;
-const VISIBLE_TO_CAPTURE = Boolean(process.env.HALO_VISIBLE); // debug only
+const VISIBLE_TO_CAPTURE = Boolean(process.env.HALO_VISIBLE);
 const SMOKE = Boolean(process.env.HALO_SMOKE); // headless self-check used by `npm run smoke`
 
-if (SMOKE) app.setPath('userData', path.join(require('node:os').tmpdir(), 'halo-smoke-' + process.pid));
+if (SMOKE) {
+  app.setPath('userData', path.join(require('node:os').tmpdir(), 'halo-smoke-' + process.pid));
+  // Keep the self-check off every macOS privacy prompt: fake media devices
+  // instead of the real mic, an in-memory keychain instead of the login one.
+  app.commandLine.appendSwitch('use-fake-device-for-media-stream');
+  app.commandLine.appendSwitch('use-fake-ui-for-media-stream');
+  app.commandLine.appendSwitch('use-mock-keychain');
+}
 if (!SMOKE && !app.requestSingleInstanceLock()) app.quit();
 app.on('second-instance', () => { if (win) showWindow(); });
 
@@ -241,9 +248,7 @@ function applyTheme(next) {
   if (next === theme.current) return;
   theme.current = next;
   nativeTheme.themeSource = next;            // keeps native bits (select menus, scrollbars) in step with the glass
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('theme', next);
-  }
+  if (win && !win.isDestroyed()) win.webContents.send('theme', next);
 }
 
 async function sampleBackdrop() {
@@ -445,7 +450,7 @@ function registerIpc() {
   ipcMain.handle('claude:abort', (_e, id) => { inflight.get(id)?.abort(); inflight.delete(id); });
 
   ipcMain.handle('mic:request', async () => {
-    if (process.platform !== 'darwin') return true;
+    if (process.platform !== 'darwin' || SMOKE) return true;
     const status = systemPreferences.getMediaAccessStatus('microphone');
     if (status === 'granted') return true;
     return systemPreferences.askForMediaAccess('microphone');
@@ -471,7 +476,9 @@ function registerIpc() {
     x = Math.min(Math.max(x, a.x), a.x + a.width - w);
     const y = nearBottom ? Math.max(a.y, b.y + b.height - h) : b.y;
     placing = true;
-    win.setBounds({ x, y, width: w, height: h }, false);
+    // Only panel open/close asks to animate: on macOS an animated setBounds blocks
+    // the main process for its duration, so streaming growth must stay instant.
+    win.setBounds({ x, y, width: w, height: h }, Boolean(req.animate));
     setTimeout(() => { placing = false; }, 300);
   });
   ipcMain.handle('window:preset', (_e, preset) => {
@@ -481,7 +488,6 @@ function registerIpc() {
     placeWindow(homePosition(b.height));
     return config.getPublic();
   });
-  ipcMain.handle('window:dock', () => cycleDock());
   ipcMain.on('window:focus-input', grabFocusForTyping);
   ipcMain.on('window:release-focus', releaseFocus);
   ipcMain.on('window:hide', () => win?.hide());

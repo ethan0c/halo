@@ -59,7 +59,7 @@ function coverage(px, py) {
 }
 function raster(size, colorAt) {
   const ss = 4, buf = Buffer.alloc(size * size * 4);
-  const pad = size * 0.08; // breathing room
+  const pad = size * 0.08;
   const scale = (size - pad * 2) / 24;
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     let cov = 0;
@@ -103,5 +103,4 @@ writeFileSync(join(out, 'trayTemplate.png'), png(18, 18, raster(18, mono)));
 writeFileSync(join(out, 'trayTemplate@2x.png'), png(36, 36, raster(36, mono)));
 const big = 512, inner = raster(big, gradient);
 writeFileSync(join(out, 'icon.png'), png(big, big, roundedBg(big, 0.22, inner)));
-writeFileSync(join(out, 'logo-512.png'), png(big, big, inner));
 console.log('icons written to', out);

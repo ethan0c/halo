@@ -14,10 +14,10 @@ const DEFAULT_SHORTCUTS = {
 const DEFAULTS = {
   model: 'claude-opus-5-5',
   effort: 'medium',
-  context: '',          // free-form notes about the user
+  context: '',
   resume: null,         // { name, text }
-  job: '',              // job description text
-  micId: '',            // your voice
+  job: '',
+  micId: '',
   mic2Id: '',           // optional second input (loopback device carrying the call audio)
   systemAudio: false,
   noiseSuppression: true, // browser-side noise suppression, echo cancellation and auto gain on every input
@@ -88,4 +88,4 @@ function update(patch) {
   return getPublic();
 }
 
-module.exports = { load, getApiKey, getPublic, update, DEFAULTS, DEFAULT_SHORTCUTS };
+module.exports = { load, getApiKey, getPublic, update };
