@@ -1,0 +1,42 @@
+{
+  "name": "halo",
+  "productName": "Halo",
+  "version": "0.1.0",
+  "description": "A quiet, screen-share-invisible AI copilot that floats over your screen.",
+  "private": true,
+  "main": "src/main/main.js",
+  "scripts": {
+    "build": "node build.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && HALO_VISIBLE=1 electron .",
+    "smoke": "npm run build && HALO_SMOKE=1 electron .",
+    "dist": "npm run build && electron-builder --mac"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "@fontsource-variable/geist": "latest",
+    "@huggingface/transformers": "latest",
+    "marked": "latest"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest",
+    "esbuild": "latest"
+  },
+  "build": {
+    "appId": "app.halo.overlay",
+    "productName": "Halo",
+    "files": ["src/**", "dist/**", "assets/**", "package.json"],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.png",
+      "target": ["dir"],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Halo listens to your interview so it can transcribe and suggest answers.",
+        "NSScreenCaptureUsageDescription": "Halo captures your screen so Claude can answer what is on it.",
+        "LSUIElement": true
+      }
+    }
+  }
+}
